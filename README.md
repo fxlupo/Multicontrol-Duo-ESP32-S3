@@ -2,7 +2,7 @@
 
 ESP32-S3 Firmware fuer die Multicontrol-Duo-Bewaesserungssteuerung.
 
-Aktuelle Firmware-Version: `2.2.1`
+Aktuelle Firmware-Version: `2.2.2`
 
 Die Firmware steuert vier bistabile Ventile ueber DRV8871-Treiber, zeigt den Zustand auf einem 3.2" SPI-TFT an, synchronisiert Sensorwerte/Events/Kommandos mit dem Jninty-Bewaesserungsmodul und unterstuetzt OTA-Updates.
 
@@ -72,6 +72,27 @@ Moegliche Meldungen:
 - `Skip: Boden zu kalt <Wert>C`: Bodentemperatur liegt unter der konfigurierten Mindesttemperatur.
 - `Skip: Boden zu feucht <Wert>%`: Bodenfeuchte liegt am oder ueber dem konfigurierten Schwellwert.
 - `Skip: es regnet <Wert>mm`: Regen-Sperre ist aktiv, wenn im Scheduler/ESP entsprechend bewertet.
+
+## Betrieb ohne Bodensensoren
+
+Wenn anfangs noch keine WH52/Bodensensoren vorhanden sind, kann der Scheduler trotzdem im Zeitplanbetrieb laufen.
+
+In `include/config.h`:
+
+```cpp
+#define SCHEDULER_MISSING_SENSOR_MODE       1
+#define SCHEDULER_SENSOR_FALLBACK_PERCENT 100
+#define SCHEDULER_IGNORE_SENSOR_CHECKS      0
+```
+
+Bedeutung:
+
+- `SCHEDULER_MISSING_SENSOR_MODE 0`: Zeitplan wird geskippt, wenn keine frischen Bodensensorwerte vorliegen.
+- `SCHEDULER_MISSING_SENSOR_MODE 1`: Zeitplan läuft trotzdem mit dem angegebenen Fallback-Prozent.
+- `SCHEDULER_SENSOR_FALLBACK_PERCENT 100`: Bei fehlenden Sensoren volle geplante Dauer.
+- `SCHEDULER_IGNORE_SENSOR_CHECKS 1`: Sensorchecks komplett ignorieren. Nur bewusst fuer reinen Zeitplanbetrieb verwenden.
+
+Sobald frische Sensordaten vorhanden sind, greifen die normalen Prüfungen für Bodentemperatur, Bodenfeuchte und Regen.
 
 Im Web-Dashboard ist die Sync-/Statuskarte am Desktop oben und mobil unten. Die Reihenfolge ist:
 

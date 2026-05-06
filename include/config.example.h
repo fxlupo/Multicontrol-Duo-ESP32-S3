@@ -62,6 +62,17 @@
 #define SENSOR_STALE_MS    900000UL
 #define ECOWITT_DEAD_MS   1800000UL
 
+// -- Scheduler bei fehlenden Bodensensoren ----------------
+// SCHEDULER_MISSING_SENSOR_MODE:
+//   0 = Zeitplan skippen, wenn keine frischen Bodensensorwerte vorliegen
+//   1 = Zeitplan trotzdem starten, mit SCHEDULER_SENSOR_FALLBACK_PERCENT
+// SCHEDULER_IGNORE_SENSOR_CHECKS:
+//   0 = normale Sensorchecks aktiv
+//   1 = Sensorchecks komplett ignorieren (bewusster Zeitplanbetrieb)
+#define SCHEDULER_MISSING_SENSOR_MODE       1
+#define SCHEDULER_SENSOR_FALLBACK_PERCENT 100
+#define SCHEDULER_IGNORE_SENSOR_CHECKS      0
+
 // -- Display ----------------------------------------------
 #define DISPLAY_BACKLIGHT_DIM_MS 600000UL  // nach 10min ausschalten
 #define DISPLAY_BL_FULL            255

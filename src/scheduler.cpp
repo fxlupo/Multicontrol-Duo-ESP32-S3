@@ -57,6 +57,22 @@ static bool weekdayMatch(uint8_t mask, int tm_wday) {
     return (mask >> bit) & 1;
 }
 
+#ifndef SCHEDULER_MISSING_SENSOR_MODE
+#define SCHEDULER_MISSING_SENSOR_MODE 1
+#endif
+
+#ifndef SCHEDULER_SENSOR_FALLBACK_PERCENT
+#define SCHEDULER_SENSOR_FALLBACK_PERCENT 50
+#endif
+
+#ifndef SCHEDULER_IGNORE_SENSOR_CHECKS
+#define SCHEDULER_IGNORE_SENSOR_CHECKS 0
+#endif
+
+static uint8_t fallbackPercent() {
+    return min<uint8_t>(100, max<uint8_t>(1, SCHEDULER_SENSOR_FALLBACK_PERCENT));
+}
+
 static WaterJob* enqueueJob(uint8_t zone, uint32_t durationSec) {
     if (_qLen >= MAX_WATER_QUEUE) return nullptr;
     WaterJob& job = _queue[_qLen++];
@@ -164,26 +180,37 @@ void scheduler::tick() {
                 : ecowitt::soil[0];
             float durationSec = s.duration_min * 60.0f;
 
+#if SCHEDULER_IGNORE_SENSOR_CHECKS
+            durationSec = min<float>(durationSec, (float)z.max_duration_min * 60.0f);
+            WaterJob* job = enqueueJob(z.id, (uint32_t)durationSec);
+            if (job) {
+                strlcpy(job->reason, "schedule", sizeof(job->reason));
+                snprintf(job->detail, sizeof(job->detail), "Sensorcheck aus, Prog %c", s.program);
+            } else {
+                events::log(z.id, "skip", "system", "Queue voll", 0, NAN, NAN, NAN, NAN);
+            }
+            break;
+#else
             if (!hasFreshSensor) {
-                // Fallback: 50% Dauer, kein Sensorcheck
-#ifndef SCHEDULER_TEST_IGNORE_SENSOR_CHECKS
-                durationSec *= 0.5f;
-#endif
+#if SCHEDULER_MISSING_SENSOR_MODE == 0
+                events::log(z.id, "skip", "sensor", "Keine Sensor Daten", 0,
+                    NAN, NAN, NAN, NAN);
+                continue;
+#else
+                // Fallback-Modus: kein Sensorcheck, aber definierte Laufzeit.
+                uint8_t pct = fallbackPercent();
+                durationSec *= ((float)pct / 100.0f);
                 WaterJob* job = enqueueJob(z.id, (uint32_t)durationSec);
                 if (job) {
                     strlcpy(job->reason, "schedule",               sizeof(job->reason));
-#ifdef SCHEDULER_TEST_IGNORE_SENSOR_CHECKS
-                    strlcpy(job->detail, "TEST ohne Sensorcheck",  sizeof(job->detail));
-#else
-                    strlcpy(job->detail, "Sensor-Fallback 50%",    sizeof(job->detail));
-#endif
+                    snprintf(job->detail, sizeof(job->detail), "Sensor-Fallback %u%%", pct);
                 } else {
                     events::log(z.id, "skip", "system", "Queue voll", 0, NAN, NAN, NAN, NAN);
                 }
                 continue;
+#endif
             }
 
-#ifndef SCHEDULER_TEST_IGNORE_SENSOR_CHECKS
             // Bodentemperatur prüfen
             if (!isnan(sd.temp) && sd.temp < z.temp_minimum) {
                 char det[64];
@@ -212,7 +239,6 @@ void scheduler::tick() {
                     continue;
                 }
             }
-#endif
 
             // Dauer berechnen
             if (!isnan(sd.temp) && sd.temp > z.temp_factor_above) {
@@ -236,6 +262,7 @@ void scheduler::tick() {
                     ecowitt::weather.hasRain ? ecowitt::weather.rain_6h : NAN);
             }
             break;  // pro Zone nur ein Schedule pro Minute
+#endif
         }
     }
 
