@@ -10,6 +10,7 @@
 #include "display.h"
 #include "rtc_clock.h"
 #include "ota_update.h"
+#include "notifications.h"
 
 #ifdef TOUCH_DIAG_ONLY
 #include <TFT_eSPI.h>
@@ -548,6 +549,7 @@ void setup() {
     // 5. WiFi + NTP  (kein WDT aktiv – setup darf beliebig lang blockieren)
     wifi::connect();
     ota::init();
+    notify::init();
 
     // 6. Config und Eventlog vom Backend holen
     if (wifi::isConnected()) {
@@ -588,6 +590,7 @@ void loop() {
     // WiFi-Reconnect prüfen
     wifi::loop();
     ota::handle();
+    notify::loop();
 
     // Während des eigentlichen OTA-Uploads keine HTTP-Syncs oder Scheduler-
     // Arbeit dazwischenwerfen. Nur die OTA-Seite darf den Fortschritt nachziehen.

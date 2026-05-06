@@ -82,6 +82,21 @@
 #define HTTP_TIMEOUT_MS  8000
 #define DEBUG_API_SYNC   0
 
+// -- WhatsApp Benachrichtigungen --------------------------
+// CallMeBot WhatsApp API: https://www.callmebot.com/blog/free-api-whatsapp-messages/
+// Die API-Keys gehoeren jeweils zur aktivierten Telefonnummer.
+#define WHATSAPP_NOTIFICATIONS_ENABLED 0
+#define WHATSAPP_SEND_INTERVAL_MS      5000UL
+#define WHATSAPP_QUEUE_SIZE            8
+
+#define WHATSAPP_RECIPIENT_1_ENABLED 0
+#define WHATSAPP_RECIPIENT_1_PHONE   "+491701234567"
+#define WHATSAPP_RECIPIENT_1_API_KEY "callmebot-api-key-1"
+
+#define WHATSAPP_RECIPIENT_2_ENABLED 0
+#define WHATSAPP_RECIPIENT_2_PHONE   "+491701234568"
+#define WHATSAPP_RECIPIENT_2_API_KEY "callmebot-api-key-2"
+
 // -- OTA ---------------------------------------------------
 #define OTA_HOSTNAME           "multicontrol-duo-esp32"
 #define OTA_PASSWORD           "ota-passwort-aendern"

@@ -2,7 +2,7 @@
 
 ESP32-S3 Firmware fuer die Multicontrol-Duo-Bewaesserungssteuerung.
 
-Aktuelle Firmware-Version: `2.2.2`
+Aktuelle Firmware-Version: `2.2.3`
 
 Die Firmware steuert vier bistabile Ventile ueber DRV8871-Treiber, zeigt den Zustand auf einem 3.2" SPI-TFT an, synchronisiert Sensorwerte/Events/Kommandos mit dem Jninty-Bewaesserungsmodul und unterstuetzt OTA-Updates.
 
@@ -35,6 +35,7 @@ Danach in `include/config.h` mindestens setzen:
 - ArduinoOTA fuer Firmware-Updates per WLAN.
 - Event-Sync zwischen ESP und Backend: ESP schreibt Events ins Backend und laedt beim Start die letzten Events.
 - Web-Konfiguration kann auf der Zonen-Seite als JSON exportiert werden.
+- Basis fuer WhatsApp-Benachrichtigungen ueber CallMeBot mit zwei konfigurierbaren Empfaengern.
 
 ## Jninty Backend
 
@@ -115,6 +116,34 @@ Filter im Web-Frontend:
 - Zone-Auswahl
 
 Der Scheduler-Filter umfasst geplante Laeufe und sensorbedingte Scheduler-Skips.
+
+## WhatsApp Benachrichtigungen
+
+Die Firmware enthaelt eine deaktivierte Basis fuer WhatsApp-Benachrichtigungen ueber die Bibliothek `Callmebot ESP32`.
+Konkrete Ereignisse werden separat festgelegt und koennen dann gezielt an `notify::enqueue(...)` angeschlossen werden.
+
+In `include/config.h`:
+
+```cpp
+#define WHATSAPP_NOTIFICATIONS_ENABLED 0
+#define WHATSAPP_SEND_INTERVAL_MS      5000UL
+#define WHATSAPP_QUEUE_SIZE            8
+
+#define WHATSAPP_RECIPIENT_1_ENABLED 0
+#define WHATSAPP_RECIPIENT_1_PHONE   "+491701234567"
+#define WHATSAPP_RECIPIENT_1_API_KEY "callmebot-api-key-1"
+
+#define WHATSAPP_RECIPIENT_2_ENABLED 0
+#define WHATSAPP_RECIPIENT_2_PHONE   "+491701234568"
+#define WHATSAPP_RECIPIENT_2_API_KEY "callmebot-api-key-2"
+```
+
+Bedeutung:
+
+- `WHATSAPP_NOTIFICATIONS_ENABLED 1`: WhatsApp-Queue aktivieren.
+- Pro Empfaenger muss `*_ENABLED 1`, Telefonnummer und passender CallMeBot-API-Key gesetzt sein.
+- Bei einer spaeteren Ereignis-Anbindung wird eine Nachricht fuer alle aktiven Empfaenger in die Queue gestellt.
+- `WHATSAPP_SEND_INTERVAL_MS` begrenzt den Abstand zwischen zwei API-Aufrufen, damit der Loop nicht durch mehrere Nachrichten direkt hintereinander blockiert.
 
 ## Konfigurations-Export
 
