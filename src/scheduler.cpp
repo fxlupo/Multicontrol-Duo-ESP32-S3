@@ -9,6 +9,7 @@
 struct WaterJob {
     uint8_t  zone;
     uint32_t durationSec;
+    bool     started;
     char     reason[12];
     char     detail[64];
     float    moisture;
@@ -17,7 +18,8 @@ struct WaterJob {
     float    rain_6h;
 };
 
-static WaterJob  _queue[4];
+static constexpr uint8_t MAX_WATER_QUEUE = 12;
+static WaterJob  _queue[MAX_WATER_QUEUE];
 static int8_t    _qLen         = 0;
 static int8_t    _currentJob   = -1;
 static unsigned long _jobPauseUntil = 0;
@@ -53,6 +55,17 @@ static void markTriggered(uint16_t id, int minOfDay, int wday) {
 static bool weekdayMatch(uint8_t mask, int tm_wday) {
     int bit = (tm_wday == 0) ? 6 : tm_wday - 1;
     return (mask >> bit) & 1;
+}
+
+static WaterJob* enqueueJob(uint8_t zone, uint32_t durationSec) {
+    if (_qLen >= MAX_WATER_QUEUE) return nullptr;
+    WaterJob& job = _queue[_qLen++];
+    memset(&job, 0, sizeof(job));
+    job.zone        = zone;
+    job.durationSec = durationSec;
+    job.started     = false;
+    job.moisture = job.temp = job.ec = job.rain_6h = NAN;
+    return &job;
 }
 
 void scheduler::trackManualOpen(uint8_t zone, uint32_t durationMs) {
@@ -125,14 +138,11 @@ void scheduler::tick() {
         return;
     }
 
-    // Wenn bereits eine Queue läuft: warten
-    if (_qLen > 0 || valve::getOpenZone() > 0) return;
-
     struct tm t;
     if (!getLocalTime(&t, 100)) return;
     int minOfDay = t.tm_hour * 60 + t.tm_min;
 
-    _qLen = 0;
+    if (_currentJob < 0) _qLen = 0;
 
     for (uint8_t zi = 0; zi < cfg::zoneCount; zi++) {
         const ZoneConfig& z = cfg::zones[zi];
@@ -159,17 +169,16 @@ void scheduler::tick() {
 #ifndef SCHEDULER_TEST_IGNORE_SENSOR_CHECKS
                 durationSec *= 0.5f;
 #endif
-                if (_qLen < 4) {
-                    WaterJob& job = _queue[_qLen++];
-                    job.zone        = z.id;
-                    job.durationSec = (uint32_t)durationSec;
-                    strlcpy(job.reason, "schedule",                sizeof(job.reason));
+                WaterJob* job = enqueueJob(z.id, (uint32_t)durationSec);
+                if (job) {
+                    strlcpy(job->reason, "schedule",               sizeof(job->reason));
 #ifdef SCHEDULER_TEST_IGNORE_SENSOR_CHECKS
-                    strlcpy(job.detail, "TEST ohne Sensorcheck",   sizeof(job.detail));
+                    strlcpy(job->detail, "TEST ohne Sensorcheck",  sizeof(job->detail));
 #else
-                    strlcpy(job.detail, "Sensor-Fallback 50%",    sizeof(job.detail));
+                    strlcpy(job->detail, "Sensor-Fallback 50%",    sizeof(job->detail));
 #endif
-                    job.moisture = job.temp = job.ec = job.rain_6h = NAN;
+                } else {
+                    events::log(z.id, "skip", "system", "Queue voll", 0, NAN, NAN, NAN, NAN);
                 }
                 continue;
             }
@@ -212,23 +221,25 @@ void scheduler::tick() {
             uint32_t maxSec = (uint32_t)z.max_duration_min * 60;
             if (durationSec > maxSec) durationSec = maxSec;
 
-            if (_qLen < 4) {
-                WaterJob& job = _queue[_qLen++];
-                job.zone        = z.id;
-                job.durationSec = (uint32_t)durationSec;
-                strlcpy(job.reason, "schedule", sizeof(job.reason));
-                snprintf(job.detail, sizeof(job.detail), "Prog %c, Feuchte %.0f%%",
+            WaterJob* job = enqueueJob(z.id, (uint32_t)durationSec);
+            if (job) {
+                strlcpy(job->reason, "schedule", sizeof(job->reason));
+                snprintf(job->detail, sizeof(job->detail), "Prog %c, Feuchte %.0f%%",
                     s.program, isnan(sd.moisture) ? 0.0f : sd.moisture);
-                job.moisture = sd.moisture;
-                job.temp     = sd.temp;
-                job.ec       = sd.ec;
-                job.rain_6h  = ecowitt::weather.hasRain ? ecowitt::weather.rain_6h : NAN;
+                job->moisture = sd.moisture;
+                job->temp     = sd.temp;
+                job->ec       = sd.ec;
+                job->rain_6h  = ecowitt::weather.hasRain ? ecowitt::weather.rain_6h : NAN;
+            } else {
+                events::log(z.id, "skip", "system", "Queue voll", 0,
+                    sd.moisture, sd.temp, sd.ec,
+                    ecowitt::weather.hasRain ? ecowitt::weather.rain_6h : NAN);
             }
             break;  // pro Zone nur ein Schedule pro Minute
         }
     }
 
-    if (_qLen > 0) {
+    if (_qLen > 0 && _currentJob < 0) {
         _currentJob = 0;
         _jobPauseUntil = 0;
     }
@@ -244,20 +255,19 @@ void scheduler::update() {
 
     if (!valve::isOpen(job.zone)) {
         // Entweder noch nicht geöffnet oder gerade geschlossen (Max-Timer)
-        static bool jobStarted = false;
-        if (!jobStarted) {
+        if (!job.started) {
+            if (valve::getOpenZone() > 0) return;
             // Job starten
             if (valve::open(job.zone, job.durationSec * 1000UL)) {
                 events::log(job.zone, "open", job.reason, job.detail,
                     job.durationSec, job.moisture, job.temp, job.ec, job.rain_6h);
-                jobStarted = true;
+                job.started = true;
             }
         } else {
             // Job beendet (Max-Timer hat geschlossen oder manuell)
             events::log(job.zone, "close", job.reason, "Max-Timer", 0,
                 NAN, NAN, NAN, NAN);
             events::flush();
-            jobStarted = false;
             _currentJob++;
             if (_currentJob >= _qLen) {
                 _qLen = 0; _currentJob = -1;

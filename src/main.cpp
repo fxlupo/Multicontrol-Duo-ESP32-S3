@@ -614,6 +614,8 @@ void loop() {
     String currentValveState = valve::stateStr();
     if (currentValveState != lastValveState) {
         display::refresh();
+        events::postStatus();
+        events::flush();
         lastValveState = currentValveState;
     }
 
