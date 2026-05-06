@@ -61,6 +61,7 @@
 // -- Sensor-Freshness -------------------------------------
 #define SENSOR_STALE_MS    900000UL
 #define ECOWITT_DEAD_MS   1800000UL
+#define BACKEND_DEAD_MS    300000UL
 
 // -- Scheduler bei fehlenden Bodensensoren ----------------
 // SCHEDULER_MISSING_SENSOR_MODE:

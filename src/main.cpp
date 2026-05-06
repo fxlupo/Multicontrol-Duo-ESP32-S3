@@ -1,4 +1,6 @@
 #include <Arduino.h>
+#include <WiFi.h>
+#include <esp_system.h>
 #include "config.h"
 #include "watchdog.h"
 #include "wifi_manager.h"
@@ -11,6 +13,78 @@
 #include "rtc_clock.h"
 #include "ota_update.h"
 #include "notifications.h"
+
+#ifndef BACKEND_DEAD_MS
+#define BACKEND_DEAD_MS 300000UL
+#endif
+
+static const char* resetReasonText(esp_reset_reason_t reason) {
+    switch (reason) {
+        case ESP_RST_POWERON:  return "Power-On";
+        case ESP_RST_EXT:      return "Externer Reset";
+        case ESP_RST_SW:       return "Software-Reset";
+        case ESP_RST_PANIC:    return "Panic/Exception";
+        case ESP_RST_INT_WDT:  return "Interrupt-Watchdog";
+        case ESP_RST_TASK_WDT: return "Task-Watchdog";
+        case ESP_RST_WDT:      return "Watchdog";
+        case ESP_RST_DEEPSLEEP:return "Deep-Sleep";
+        case ESP_RST_BROWNOUT: return "Brownout";
+        case ESP_RST_SDIO:     return "SDIO";
+        default:               return "Unbekannt";
+    }
+}
+
+static bool isCrashReset(esp_reset_reason_t reason) {
+    return reason == ESP_RST_PANIC ||
+           reason == ESP_RST_INT_WDT ||
+           reason == ESP_RST_TASK_WDT ||
+           reason == ESP_RST_WDT ||
+           reason == ESP_RST_BROWNOUT;
+}
+
+static void notifyBootStatus(bool rtcAvailable, bool rtcTimeOk) {
+    esp_reset_reason_t reason = esp_reset_reason();
+    String online = String("IP ") + WiFi.localIP().toString() +
+                    ", Reset: " + resetReasonText(reason) +
+                    ", FW 2.2.4";
+    notify::enqueue("ESP online", online);
+
+    if (isCrashReset(reason)) {
+        notify::enqueue("Watchdog/Crash erkannt", String("Ursache: ") + resetReasonText(reason));
+    }
+
+    if (!rtcAvailable) {
+        notify::enqueue("RTC Fehler", "DS3231 nicht erreichbar");
+    } else if (!rtcTimeOk) {
+        notify::enqueue("RTC Fehler", "DS3231 Uhrzeit ungueltig");
+    }
+}
+
+static void monitorNotificationHealth() {
+    static bool backendDeadNotified = false;
+    static bool gwDeadNotified = false;
+    static unsigned long bootMs = millis();
+
+    unsigned long now = millis();
+
+    bool backendOk = cfg::backendOk();
+    if (!backendOk && !backendDeadNotified && now - bootMs > BACKEND_DEAD_MS) {
+        notify::enqueue("Backend nicht erreichbar", "seit mehr als 5 Minuten kein erfolgreicher Sync");
+        backendDeadNotified = true;
+    } else if (backendOk && backendDeadNotified) {
+        notify::enqueue("Backend wieder erreichbar", "Sync erfolgreich");
+        backendDeadNotified = false;
+    }
+
+    bool gwOk = ecowitt::ecowittOk();
+    if (!gwOk && !gwDeadNotified && now - bootMs > ECOWITT_DEAD_MS) {
+        notify::enqueue("GW1200 offline", "seit mehr als 30 Minuten keine Daten");
+        gwDeadNotified = true;
+    } else if (gwOk && gwDeadNotified) {
+        notify::enqueue("GW1200 wieder online", "Datenempfang wiederhergestellt");
+        gwDeadNotified = false;
+    }
+}
 
 #ifdef TOUCH_DIAG_ONLY
 #include <TFT_eSPI.h>
@@ -544,12 +618,14 @@ void setup() {
 
     // 4. RTC früh lesen, damit Zeitpläne auch ohne Netzwerk eine Uhr haben
     rtc::init();
-    rtc::syncSystemFromRtc();
+    bool rtcAvailable = rtc::available();
+    bool rtcTimeOk = rtc::syncSystemFromRtc();
 
     // 5. WiFi + NTP  (kein WDT aktiv – setup darf beliebig lang blockieren)
     wifi::connect();
     ota::init();
     notify::init();
+    notifyBootStatus(rtcAvailable, rtcTimeOk);
 
     // 6. Config und Eventlog vom Backend holen
     if (wifi::isConnected()) {
@@ -601,6 +677,8 @@ void loop() {
         }
         return;
     }
+
+    monitorNotificationHealth();
 
     // Ventil-Timeout überwachen
     valve::update();

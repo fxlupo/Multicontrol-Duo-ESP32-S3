@@ -2,7 +2,7 @@
 
 ESP32-S3 Firmware fuer die Multicontrol-Duo-Bewaesserungssteuerung.
 
-Aktuelle Firmware-Version: `2.2.3`
+Aktuelle Firmware-Version: `2.2.4`
 
 Die Firmware steuert vier bistabile Ventile ueber DRV8871-Treiber, zeigt den Zustand auf einem 3.2" SPI-TFT an, synchronisiert Sensorwerte/Events/Kommandos mit dem Jninty-Bewaesserungsmodul und unterstuetzt OTA-Updates.
 
@@ -120,7 +120,7 @@ Der Scheduler-Filter umfasst geplante Laeufe und sensorbedingte Scheduler-Skips.
 ## WhatsApp Benachrichtigungen
 
 Die Firmware enthaelt eine deaktivierte Basis fuer WhatsApp-Benachrichtigungen ueber die Bibliothek `Callmebot ESP32`.
-Konkrete Ereignisse werden separat festgelegt und koennen dann gezielt an `notify::enqueue(...)` angeschlossen werden.
+Konkrete Systemereignisse werden ueber `notify::enqueue(...)` in eine Queue gestellt und nacheinander an alle aktiven Empfaenger versendet.
 
 In `include/config.h`:
 
@@ -144,6 +144,14 @@ Bedeutung:
 - Pro Empfaenger muss `*_ENABLED 1`, Telefonnummer und passender CallMeBot-API-Key gesetzt sein.
 - Bei einer spaeteren Ereignis-Anbindung wird eine Nachricht fuer alle aktiven Empfaenger in die Queue gestellt.
 - `WHATSAPP_SEND_INTERVAL_MS` begrenzt den Abstand zwischen zwei API-Aufrufen, damit der Loop nicht durch mehrere Nachrichten direkt hintereinander blockiert.
+
+Aktuell angebundene Ereignisse:
+
+- ESP Neustart / Online mit IP, Reset-Ursache und Firmware-Version.
+- Watchdog/Crash/Brownout erkannt mit Reset-Ursache.
+- Backend laenger als `BACKEND_DEAD_MS` nicht erreichbar und wieder erreichbar.
+- GW1200 laenger als `ECOWITT_DEAD_MS` nicht erreichbar und wieder erreichbar.
+- RTC/DS3231 beim Start nicht erreichbar oder Uhrzeit ungueltig.
 
 ## Konfigurations-Export
 

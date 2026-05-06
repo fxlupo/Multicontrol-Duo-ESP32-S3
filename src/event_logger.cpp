@@ -214,7 +214,7 @@ void events::postStatus() {
     doc["freeHeap"]        = (uint32_t)ESP.getFreeHeap();
     doc["ecowittOk"]       = ecowitt::ecowittOk();
     doc["valveStates"]     = valve::stateStr();
-    doc["firmwareVersion"] = "2.2.3";
+    doc["firmwareVersion"] = "2.2.4";
     doc["ipAddress"]       = WiFi.localIP().toString();
     String body;
     serializeJson(doc, body);

@@ -27,6 +27,12 @@ namespace cfg {
     uint32_t      version        = 0;
 }
 
+static unsigned long _lastBackendOkMs = 0;
+
+static void markBackendOk() {
+    _lastBackendOkMs = millis();
+}
+
 static void saveToNVS() {
     Preferences p;
     p.begin(NVS_NAMESPACE, false);
@@ -100,6 +106,7 @@ static bool postCommandState(const char* id, const char* state, bool ok, const c
     int code = http.POST(body);
     API_DBG_PRINTF("[cfg] %s code=%d\n", state, code);
     http.end();
+    if (code >= 200 && code < 300) markBackendOk();
     return code >= 200 && code < 300;
 }
 
@@ -219,6 +226,7 @@ bool cfg::sync() {
     int code = http.GET();
     API_DBG_PRINTF("[cfg] config code=%d\n", code);
     if (code != 200) { http.end(); return false; }
+    markBackendOk();
 
     String payload = http.getString();
     bool configChanged = payload != lastConfigPayload;
@@ -252,6 +260,7 @@ bool cfg::sync() {
     int cmdCode = cmdHttp.GET();
     API_DBG_PRINTF("[cfg] commands code=%d\n", cmdCode);
     if (cmdCode == 200) {
+        markBackendOk();
         JsonDocument cmdDoc;
         DeserializationError cmdErr = deserializeJson(cmdDoc, cmdHttp.getStream());
         if (!cmdErr) {
@@ -282,4 +291,12 @@ void cfg::ackCommands() {
         postCommandState(commands[i].id, "done", true, "executed");
     }
     cmdCount = 0;
+}
+
+bool cfg::backendOk() {
+    return _lastBackendOkMs > 0 && (millis() - _lastBackendOkMs < BACKEND_DEAD_MS);
+}
+
+unsigned long cfg::lastBackendOkMs() {
+    return _lastBackendOkMs;
 }
