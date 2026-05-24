@@ -46,7 +46,7 @@ static void notifyBootStatus(bool rtcAvailable, bool rtcTimeOk) {
     esp_reset_reason_t reason = esp_reset_reason();
     String online = String("IP ") + WiFi.localIP().toString() +
                     ", Reset: " + resetReasonText(reason) +
-                    ", FW 2.2.4";
+                    ", FW 2.2.5";
     notify::enqueue("ESP online", online);
 
     if (isCrashReset(reason)) {

@@ -76,7 +76,7 @@ static void pwmClose(uint8_t pin, uint32_t ms) {
 
 static void sendClosePulse(uint8_t in1, uint8_t in2) {
     digitalWrite(in1, LOW);
-#ifdef VALVE_TEST_DIRECT_CLOSE
+#if defined(VALVE_TEST_DIRECT_CLOSE) && VALVE_TEST_DIRECT_CLOSE
     digitalWrite(in2, HIGH);
     delayWithWdt(_settings.closePulseMs);
     digitalWrite(in2, LOW);
