@@ -1426,7 +1426,7 @@ void display::handleTouch() {
             if (i == 0) {
                 valve::setOpenPulseMs((uint16_t)max<int>(0, (int)s.openPulseMs + delta * 25));
             } else if (i == 1) {
-                valve::setClosePulseMs((uint16_t)max<int>(0, (int)s.closePulseMs + delta * 10));
+                valve::setClosePulseMs((uint16_t)max<int>(0, (int)s.closePulseMs + delta));
             } else if (i == 2) {
                 int pct = dutyToPercent(s.closeDuty) + delta * 5;
                 pct = min<int>(100, max<int>(1, pct));

@@ -43,7 +43,7 @@ static void loadSettings() {
     Preferences p;
     p.begin(NVS_NAMESPACE, true);
     _settings.openPulseMs  = clampU16(p.getUShort("v_open_ms", VALVE_OPEN_PULSE_MS), 50, 1000);
-    _settings.closePulseMs = clampU16(p.getUShort("v_close_ms", VALVE_CLOSE_PULSE_MS), 20, 1000);
+    _settings.closePulseMs = clampU16(p.getUShort("v_close_ms", VALVE_CLOSE_PULSE_MS), 1, 1000);
     _settings.closeDuty    = min<uint8_t>(255, max<uint8_t>(1, p.getUChar("v_close_duty", VALVE_CLOSE_DUTY)));
     _settings.seqPauseMs   = clampU16(p.getUShort("v_seq_ms", VALVE_SEQ_PAUSE_MS), 0, 5000);
     p.end();
@@ -169,7 +169,7 @@ void valve::setOpenPulseMs(uint16_t ms) {
 }
 
 void valve::setClosePulseMs(uint16_t ms) {
-    _settings.closePulseMs = clampU16(ms, 20, 1000);
+    _settings.closePulseMs = clampU16(ms, 1, 1000);
     saveSettings();
 }
 
