@@ -19,14 +19,14 @@
 #define ECOWITT_PORT     8090
 
 // -- GPIO: Ventile (DRV8871) -----------------------------
-#define V1_IN1  5
-#define V1_IN2  4
-#define V2_IN1  7
-#define V2_IN2  6
-#define V3_IN1  16
-#define V3_IN2  15
-#define V4_IN1  18
-#define V4_IN2  17
+#define V1_IN1  18
+#define V1_IN2  17
+#define V2_IN1  16
+#define V2_IN2  15
+#define V3_IN1  7
+#define V3_IN2  6
+#define V4_IN1  5
+#define V4_IN2  4
 
 // -- GPIO: TFT + Touch (via platformio.ini build_flags) --
 // ILI9341: CS=41, DC=42, RST=21, BL=47
