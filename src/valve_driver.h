@@ -15,6 +15,7 @@ namespace valve {
     bool open(uint8_t zone, uint32_t maxDurationMs);
     void close(uint8_t zone);
     void update();                        // Max-Timer prüfen, in loop() aufrufen
+    void lockOpens(uint32_t durationMs);  // Failsafe: Oeffnen temporaer sperren
 
     bool     isOpen(uint8_t zone);
     uint8_t  getOpenZone();               // 0 wenn keines offen

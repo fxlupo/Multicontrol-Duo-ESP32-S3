@@ -58,6 +58,13 @@
 // -- Watchdog ---------------------------------------------
 #define WDT_TIMEOUT_MS  8000
 
+// -- Stabilitaets-Monitoring ------------------------------
+// Speichert ca. alle 5 Minuten Uptime/Heap in NVS. Nach einem Watchdog-
+// Reset sieht man dadurch, wie lange der ESP vorher ungefaehr lief.
+#define STABILITY_SNAPSHOT_MS 300000UL
+#define CRASH_OPEN_LOCKOUT_MS 120000UL
+#define CRASH_CLOSE_EXTRA_PASSES 2
+
 // -- Sensor-Freshness -------------------------------------
 #define SENSOR_STALE_MS    900000UL
 #define ECOWITT_DEAD_MS   1800000UL

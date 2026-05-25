@@ -13,44 +13,28 @@
 #include "rtc_clock.h"
 #include "ota_update.h"
 #include "notifications.h"
+#include "stability.h"
 
 #ifndef BACKEND_DEAD_MS
 #define BACKEND_DEAD_MS 300000UL
 #endif
 
-static const char* resetReasonText(esp_reset_reason_t reason) {
-    switch (reason) {
-        case ESP_RST_POWERON:  return "Power-On";
-        case ESP_RST_EXT:      return "Externer Reset";
-        case ESP_RST_SW:       return "Software-Reset";
-        case ESP_RST_PANIC:    return "Panic/Exception";
-        case ESP_RST_INT_WDT:  return "Interrupt-Watchdog";
-        case ESP_RST_TASK_WDT: return "Task-Watchdog";
-        case ESP_RST_WDT:      return "Watchdog";
-        case ESP_RST_DEEPSLEEP:return "Deep-Sleep";
-        case ESP_RST_BROWNOUT: return "Brownout";
-        case ESP_RST_SDIO:     return "SDIO";
-        default:               return "Unbekannt";
-    }
-}
+#ifndef CRASH_OPEN_LOCKOUT_MS
+#define CRASH_OPEN_LOCKOUT_MS 120000UL
+#endif
 
-static bool isCrashReset(esp_reset_reason_t reason) {
-    return reason == ESP_RST_PANIC ||
-           reason == ESP_RST_INT_WDT ||
-           reason == ESP_RST_TASK_WDT ||
-           reason == ESP_RST_WDT ||
-           reason == ESP_RST_BROWNOUT;
-}
+#ifndef CRASH_CLOSE_EXTRA_PASSES
+#define CRASH_CLOSE_EXTRA_PASSES 2
+#endif
 
 static void notifyBootStatus(bool rtcAvailable, bool rtcTimeOk) {
-    esp_reset_reason_t reason = esp_reset_reason();
     String online = String("IP ") + WiFi.localIP().toString() +
-                    ", Reset: " + resetReasonText(reason) +
-                    ", FW 2.2.8";
+                    ", Reset: " + stability::resetReasonText() +
+                    ", FW 2.2.9";
     notify::enqueue("ESP online", online);
 
-    if (isCrashReset(reason)) {
-        notify::enqueue("Watchdog/Crash erkannt", String("Ursache: ") + resetReasonText(reason));
+    if (stability::resetWasCrash()) {
+        notify::enqueue("Watchdog/Crash erkannt", String("Ursache: ") + stability::resetReasonText());
     }
 
     if (!rtcAvailable) {
@@ -606,41 +590,66 @@ void setup() {
     Serial.begin(115200);
     delay(100);
     Serial.println("=== SETUP START ===");
+    stability::init();
 
     // 1. Failsafe: alle Ventile schließen BEVOR alles andere
+    stability::mark("setup:valves");
     valve::init();
+    if (stability::resetWasCrash()) {
+        valve::lockOpens(CRASH_OPEN_LOCKOUT_MS);
+        for (uint8_t i = 0; i < CRASH_CLOSE_EXTRA_PASSES; i++) {
+            valve::closeAll();
+        }
+    }
 
     // 2. Letzte Config aus NVS laden, damit das Display sofort sinnvolle Daten hat
+    stability::mark("setup:nvs-config");
     cfg::loadFromNVS();
 
     // 3. Display früh initialisieren: zeigt auch dann Diagnose, wenn WiFi hängt
+    stability::mark("setup:display");
     display::init();
 
     // 4. RTC früh lesen, damit Zeitpläne auch ohne Netzwerk eine Uhr haben
+    stability::mark("setup:rtc");
     rtc::init();
     bool rtcAvailable = rtc::available();
     bool rtcTimeOk = rtc::syncSystemFromRtc();
 
     // 5. WiFi + NTP  (kein WDT aktiv – setup darf beliebig lang blockieren)
+    stability::mark("setup:wifi");
     wifi::connect();
+    stability::mark("setup:ota");
     ota::init();
+    stability::mark("setup:notify");
     notify::init();
     notifyBootStatus(rtcAvailable, rtcTimeOk);
 
     // 6. Config und Eventlog vom Backend holen
     if (wifi::isConnected()) {
+        stability::mark("setup:config");
         cfg::sync();
+        stability::mark("setup:events-load");
         events::loadRecentFromBackend();
     }
 
+    stability::mark("setup:boot-event");
+    events::log(0, "skip", "system", stability::bootEventDetail(),
+                stability::previousUptimeSec(), NAN, NAN, NAN, NAN);
+    stability::mark("setup:events-flush");
+    events::flush();
+
     // 7. Erster Ecowitt-Poll
+    stability::mark("setup:ecowitt");
     ecowitt::poll();
     display::pushSensorHistory();
 
     // 8. Display nach Netzwerk-/Sensordaten aktualisieren
+    stability::mark("setup:refresh");
     display::refresh();
 
     // 9. Watchdog erst NACH setup() aktivieren – schützt ab jetzt den loop()
+    stability::mark("setup:wdt");
     wdt::init();
 
     Serial.println("Bewässerung bereit.");
@@ -651,27 +660,35 @@ void loop() {
     static String lastValveState = valve::stateStr();
     static bool eventHistoryLoaded = (events::recentCount() > 0);
 
+    stability::update();
+
     // Watchdog füttern (alle 4s)
     if (now - tWdt >= INTERVAL_WDT_MS) {
+        stability::mark("loop:wdt-feed");
         wdt::feed();
         tWdt = now;
     }
 
     // Touch-Polling (alle 50ms)
     if (now - tTouch >= INTERVAL_TOUCH_MS) {
+        stability::mark("loop:touch");
         display::handleTouch();
         tTouch = now;
     }
 
     // WiFi-Reconnect prüfen
+    stability::mark("loop:wifi");
     wifi::loop();
+    stability::mark("loop:ota");
     ota::handle();
+    stability::mark("loop:notify");
     notify::loop();
 
     // Während des eigentlichen OTA-Uploads keine HTTP-Syncs oder Scheduler-
     // Arbeit dazwischenwerfen. Nur die OTA-Seite darf den Fortschritt nachziehen.
     if (ota::running()) {
         if (now - tDisplay >= 500UL) {
+            stability::mark("ota:display");
             display::periodicRefresh();
             tDisplay = now;
         }
@@ -681,35 +698,44 @@ void loop() {
     monitorNotificationHealth();
 
     // Ventil-Timeout überwachen
+    stability::mark("loop:valve-update");
     valve::update();
 
     // Scheduler-Jobs abarbeiten
+    stability::mark("loop:sched-update");
     scheduler::update();
 
     // Scheduler-Tick (jede Sekunde, damit Minutenstarts nicht verpasst werden)
     if (now - tScheduler >= INTERVAL_SCHEDULER_MS) {
+        stability::mark("loop:sched-tick");
         scheduler::tick();
         tScheduler = now;
     }
 
     String currentValveState = valve::stateStr();
     if (currentValveState != lastValveState) {
+        stability::mark("loop:valve-change");
         display::refresh();
+        stability::mark("loop:status-post");
         events::postStatus();
+        stability::mark("loop:events-flush");
         events::flush();
         lastValveState = currentValveState;
     }
 
     // Ecowitt-Poll (alle 5min)
     if (now - tEcowitt >= INTERVAL_ECOWITT_MS) {
+        stability::mark("loop:ecowitt");
         ecowitt::poll();
         display::pushSensorHistory();
+        stability::mark("loop:sensors-post");
         events::uploadSensors();
         tEcowitt = now;
     }
 
     // Config-Sync (jede Minute)
     if (now - tConfigSync >= INTERVAL_CONFIG_MS) {
+        stability::mark("loop:config-sync");
         if (cfg::sync()) display::refresh();
         tConfigSync = now;
     }
@@ -717,16 +743,20 @@ void loop() {
     // Status-Heartbeat (jede Minute)
     if (now - tStatus >= INTERVAL_STATUS_MS) {
         if (!eventHistoryLoaded && wifi::isConnected()) {
+            stability::mark("loop:events-load");
             eventHistoryLoaded = events::loadRecentFromBackend();
             if (eventHistoryLoaded) display::refresh();
         }
+        stability::mark("loop:status-post");
         events::postStatus();
+        stability::mark("loop:events-flush");
         events::flush();
         tStatus = now;
     }
 
     // Display-Refresh (ruhig, ohne statische Seiten ständig neu zu zeichnen)
     if (now - tDisplay >= INTERVAL_DISPLAY_MS) {
+        stability::mark("loop:display");
         display::periodicRefresh();
         tDisplay = now;
     }

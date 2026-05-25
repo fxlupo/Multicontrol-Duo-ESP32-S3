@@ -18,6 +18,7 @@ struct ValveState {
 };
 static ValveState    _state[4] = {};
 static volatile bool _busy     = false;
+static unsigned long _openLockoutUntil = 0;
 static valve::Settings _settings = {
     VALVE_OPEN_PULSE_MS,
     VALVE_CLOSE_PULSE_MS,
@@ -116,6 +117,8 @@ bool valve::open(uint8_t zone, uint32_t maxDurationMs) {
     if (zone < 1 || zone > 4 || _busy) return false;
     uint8_t idx = zone - 1;
     if (_state[idx].open) return true;
+    if (_openLockoutUntil != 0 && (long)(millis() - _openLockoutUntil) < 0) return false;
+    if (getOpenZone() > 0) return false;
     _busy = true;
     sendOpenPulse(PINS[idx][0], PINS[idx][1]);
     _state[idx] = {true, millis(), maxDurationMs};
@@ -141,6 +144,10 @@ void valve::update() {
             }
         }
     }
+}
+
+void valve::lockOpens(uint32_t durationMs) {
+    _openLockoutUntil = millis() + durationMs;
 }
 
 bool valve::isOpen(uint8_t zone) {

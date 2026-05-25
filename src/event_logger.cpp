@@ -3,6 +3,7 @@
 #include "wifi_manager.h"
 #include "valve_driver.h"
 #include "ecowitt_client.h"
+#include "stability.h"
 #include <HTTPClient.h>
 #include <WiFiClient.h>
 #include <WiFiClientSecure.h>
@@ -212,9 +213,18 @@ void events::postStatus() {
     doc["wifiRssi"]        = wifi::rssi();
     doc["uptimeSec"]       = wifi::uptimeSec();
     doc["freeHeap"]        = (uint32_t)ESP.getFreeHeap();
+    doc["minFreeHeap"]     = stability::minFreeHeap();
+    doc["resetReason"]     = stability::resetReasonCode();
+    doc["resetReasonText"] = stability::resetReasonText();
+    doc["bootCount"]       = stability::bootCount();
+    doc["crashCount"]      = stability::crashCount();
+    doc["previousUptimeSec"] = stability::previousUptimeSec();
+    doc["lastCrashStage"]  = stability::lastBreadcrumbStage();
+    doc["lastCrashUptimeSec"] = stability::lastBreadcrumbUptimeSec();
+    doc["lastCrashHeap"]   = stability::lastBreadcrumbHeap();
     doc["ecowittOk"]       = ecowitt::ecowittOk();
     doc["valveStates"]     = valve::stateStr();
-    doc["firmwareVersion"] = "2.2.8";
+    doc["firmwareVersion"] = "2.2.9";
     doc["ipAddress"]       = WiFi.localIP().toString();
     String body;
     serializeJson(doc, body);
