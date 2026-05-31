@@ -48,7 +48,7 @@
 // -- Task-Intervalle (ms) ---------------------------------
 #define INTERVAL_SCHEDULER_MS    1000UL
 #define INTERVAL_ECOWITT_MS    300000UL
-#define INTERVAL_CONFIG_MS       5000UL
+#define INTERVAL_CONFIG_MS      30000UL
 #define INTERVAL_SENSOR_UP_MS  300000UL
 #define INTERVAL_STATUS_MS      60000UL
 #define INTERVAL_DISPLAY_MS      1000UL
@@ -69,6 +69,7 @@
 #define SENSOR_STALE_MS    900000UL
 #define ECOWITT_DEAD_MS   1800000UL
 #define BACKEND_DEAD_MS    300000UL
+#define BACKEND_ERROR_BACKOFF_MS 120000UL
 
 // -- Scheduler bei fehlenden Bodensensoren ----------------
 // SCHEDULER_MISSING_SENSOR_MODE:
@@ -87,7 +88,7 @@
 #define DISPLAY_BL_DIM               0     // aus
 
 // -- HTTP --------------------------------------------------
-#define HTTP_TIMEOUT_MS  8000
+#define HTTP_TIMEOUT_MS  3000
 #define DEBUG_API_SYNC   0
 
 // -- WhatsApp Benachrichtigungen --------------------------

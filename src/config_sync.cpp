@@ -1,6 +1,9 @@
 #include "config_sync.h"
 #include "config.h"
 #include "wifi_manager.h"
+#include "watchdog.h"
+#include "stability.h"
+#include "valve_driver.h"
 #include <HTTPClient.h>
 #include <WiFiClient.h>
 #include <WiFiClientSecure.h>
@@ -17,6 +20,10 @@
 #define API_DBG_PRINTF(...) do {} while (0)
 #endif
 
+#ifndef BACKEND_ERROR_BACKOFF_MS
+#define BACKEND_ERROR_BACKOFF_MS 120000UL
+#endif
+
 namespace cfg {
     ZoneConfig    zones[4]       = {};
     uint8_t       zoneCount      = 0;
@@ -28,9 +35,27 @@ namespace cfg {
 }
 
 static unsigned long _lastBackendOkMs = 0;
+static unsigned long _backendBackoffUntilMs = 0;
+static uint8_t _backendErrorCount = 0;
 
 static void markBackendOk() {
     _lastBackendOkMs = millis();
+    _backendErrorCount = 0;
+    _backendBackoffUntilMs = 0;
+}
+
+static void markBackendError(const char* stage) {
+    if (_backendErrorCount < 255) _backendErrorCount++;
+    if (_backendErrorCount >= 3) {
+        _backendBackoffUntilMs = millis() + BACKEND_ERROR_BACKOFF_MS;
+        API_DBG_PRINTF("[cfg] backend backoff after %u errors at %s\n",
+                       (unsigned)_backendErrorCount,
+                       stage ? stage : "?");
+    }
+}
+
+static bool backendBackoffActive() {
+    return _backendBackoffUntilMs != 0 && (long)(millis() - _backendBackoffUntilMs) < 0;
 }
 
 static void saveToNVS() {
@@ -87,6 +112,7 @@ static uint8_t zoneNumberFromZoneId(const char* uuid) {
 
 static bool postCommandState(const char* id, const char* state, bool ok, const char* resultText) {
     if (!id || !id[0]) return false;
+    stability::mark("config:ack");
     HTTPClient http;
     String url = String(API_BASE_URL) + "/commands/" + id + "/" + state;
     API_DBG_PRINT("[cfg] POST ");
@@ -104,9 +130,11 @@ static bool postCommandState(const char* id, const char* state, bool ok, const c
     String body;
     serializeJson(doc, body);
     int code = http.POST(body);
+    wdt::feed();
     API_DBG_PRINTF("[cfg] %s code=%d\n", state, code);
     http.end();
     if (code >= 200 && code < 300) markBackendOk();
+    else markBackendError("ack");
     return code >= 200 && code < 300;
 }
 
@@ -124,6 +152,7 @@ void cfg::loadFromNVS() {
 }
 
 static void parseZones(JsonArray arr) {
+    stability::mark("config:parse");
     cfg::zoneCount = 0;
     memset(_zoneUuid, 0, sizeof(_zoneUuid));
     for (JsonObject z : arr) {
@@ -197,6 +226,7 @@ static void parseSchedules(JsonArray arr) {
 }
 
 static void parseCommands(JsonArray arr) {
+    stability::mark("config:commands");
     cfg::cmdCount = 0;
     for (JsonObject c : arr) {
         if (cfg::cmdCount >= 5) break;
@@ -213,8 +243,17 @@ bool cfg::sync() {
         API_DBG_PRINTLN("[cfg] skip: no wifi");
         return false;
     }
+    if (backendBackoffActive()) {
+        API_DBG_PRINTLN("[cfg] skip: backend backoff");
+        return false;
+    }
+    if (valve::getOpenZone() > 0) {
+        API_DBG_PRINTLN("[cfg] skip: valve open");
+        return false;
+    }
     static String lastConfigPayload;
 
+    stability::mark("config:get");
     HTTPClient http;
     String url = String(API_BASE_URL) + "/config";
     API_DBG_PRINT("[cfg] GET ");
@@ -224,8 +263,13 @@ bool cfg::sync() {
     http.setTimeout(HTTP_TIMEOUT_MS);
 
     int code = http.GET();
+    wdt::feed();
     API_DBG_PRINTF("[cfg] config code=%d\n", code);
-    if (code != 200) { http.end(); return false; }
+    if (code != 200) {
+        http.end();
+        markBackendError("config:get");
+        return false;
+    }
     markBackendOk();
 
     String payload = http.getString();
@@ -237,6 +281,7 @@ bool cfg::sync() {
     http.end();
     if (err) {
         API_DBG_PRINTF("[cfg] config json error=%s\n", err.c_str());
+        markBackendError("config:parse");
         return false;
     }
 
@@ -250,6 +295,7 @@ bool cfg::sync() {
                        (unsigned long)version);
     }
 
+    stability::mark("config:commands");
     HTTPClient cmdHttp;
     String cmdUrl = String(API_BASE_URL) + "/commands";
     API_DBG_PRINT("[cfg] GET ");
@@ -258,20 +304,24 @@ bool cfg::sync() {
     addAuth(cmdHttp);
     cmdHttp.setTimeout(HTTP_TIMEOUT_MS);
     int cmdCode = cmdHttp.GET();
+    wdt::feed();
     API_DBG_PRINTF("[cfg] commands code=%d\n", cmdCode);
     if (cmdCode == 200) {
         markBackendOk();
         JsonDocument cmdDoc;
         DeserializationError cmdErr = deserializeJson(cmdDoc, cmdHttp.getStream());
+        wdt::feed();
         if (!cmdErr) {
             if (cmdDoc.is<JsonArray>()) parseCommands(cmdDoc.as<JsonArray>());
             else parseCommands(cmdDoc["commands"].as<JsonArray>());
             API_DBG_PRINTF("[cfg] commands parsed=%u\n", cfg::cmdCount);
         } else {
             API_DBG_PRINTF("[cfg] commands json error=%s\n", cmdErr.c_str());
+            markBackendError("config:commands-json");
         }
     } else {
         cfg::cmdCount = 0;
+        markBackendError("config:commands");
     }
     cmdHttp.end();
 
@@ -280,7 +330,11 @@ bool cfg::sync() {
         API_DBG_PRINTF("[cfg] ack %s %s\n", cfg::commands[i].id, ok ? "ok" : "fail");
     }
 
-    if (configChanged) saveToNVS();
+    if (configChanged) {
+        stability::mark("config:save");
+        saveToNVS();
+        wdt::feed();
+    }
     return configChanged || cfg::cmdCount > 0;
 }
 

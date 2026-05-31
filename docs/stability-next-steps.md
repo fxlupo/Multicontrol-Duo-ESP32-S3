@@ -1,12 +1,12 @@
 # ESP stability notes
 
-Stand: 2026-05-27
+Stand: 2026-05-31
 
 ## Aktueller Firmware-Stand
 
-- GitHub `main`: `27869e8 Prepare firmware 2.2.9 stability logging`
+- GitHub `main`: `806fe8b docs: capture stability follow-up plan`
 - Firmware-Version: `2.2.9`
-- OTA zuletzt erfolgreich auf `192.168.10.116`
+- OTA zuletzt erfolgreich auf `192.168.10.116` am 2026-05-31
 - `include/config.h` ist lokal/ignoriert und wird nicht committed.
 
 ## Eingebaute Schutzmassnahmen
@@ -45,7 +45,7 @@ Heap bleibt stabil um ca. `257k`, daher aktuell kein Hinweis auf Heap-Leak.
 
 Der Loop wird von blockierenden HTTP/TLS-Aufrufen aufgehalten, bis der Task-WDT ausloest.
 
-Risikofaktoren im aktuellen Stand:
+Risikofaktoren im alten Stand:
 
 - `WDT_TIMEOUT_MS = 8000`
 - `HTTP_TIMEOUT_MS = 8000`
@@ -57,38 +57,56 @@ Risikofaktoren im aktuellen Stand:
 - WDT wird waehrend dieser blockierenden Calls nicht gefuettert.
 - Waehrend ein Ventil offen ist, koennen Netzwerk-Syncs weiterhin lange blockieren.
 
-## Naechste Schritte vor Ort
+## Patch vom 2026-05-31
+
+Umgesetzt und per OTA auf `192.168.10.116` geflasht:
+
+- `INTERVAL_CONFIG_MS` von `5000` auf `30000` erhoeht.
+- `HTTP_TIMEOUT_MS` von `8000` auf `3000` reduziert.
+- `cfg::sync()` mit feineren Breadcrumbs instrumentiert:
+  - `config:get`
+  - `config:parse`
+  - `config:commands`
+  - `config:ack`
+  - `config:save`
+- Nach HTTP-Calls in `cfg::sync()` und Command-Acks wird der Task-WDT gefuettert.
+- Backend-Backoff eingebaut:
+  - Nach 3 Backend-Fehlern wird der Config-Sync fuer `BACKEND_ERROR_BACKOFF_MS` pausiert.
+  - Default: `120000` ms.
+- Waehrend ein Ventil offen ist, wird `cfg::sync()` uebersprungen. Dadurch werden lange Backend-Calls waehrend aktiver Bewaesserung vermieden.
+
+Hinweis: Zum Zeitpunkt des OTA-Tests waren keine Ventile angeschlossen.
+
+## Beobachtung nach OTA
+
+Im Backend-Eventlog beobachten:
+
+- Kommen noch `task_wdt`-Resets?
+- Wenn ja, welches genaue `S ...`?
+  - `config:get`: Haenger beim Config-GET.
+  - `config:commands`: Haenger beim Commands-GET oder JSON-Parsing.
+  - `config:ack`: Haenger beim Command-Ack.
+  - `loop:status-post`, `loop:ecowitt` oder andere Stages: naechster Kandidat ausserhalb des Config-Syncs.
+- Bleibt der Heap weiter stabil?
+- Wenn Ventile wieder angeschlossen sind: Passieren Resets waehrend aktiver Bewaesserung?
+
+## Naechste Schritte falls Resets bleiben
 
 1. OTA/USB-Zugang sicherstellen und Serial Monitor oeffnen.
 2. Direkt vor Tests kontrollieren, dass alle Ventile physisch geschlossen sind.
-3. Patch vorbereiten:
-   - `INTERVAL_CONFIG_MS` auf 30000-60000 ms erhoehen.
-   - `HTTP_TIMEOUT_MS` auf 2500-3000 ms reduzieren.
-   - `cfg::sync()` mit feineren Breadcrumbs instrumentieren:
-     - `config:get`
-     - `config:parse`
-     - `config:commands`
-     - `config:ack`
-     - `config:save`
-   - Nach jedem HTTP-Call `wdt::feed()`.
-   - Backend-Backoff einbauen: bei mehreren Fehlern Sync fuer 2-5 Minuten aussetzen.
-   - Waehrend Ventil offen ist: lange Backend-Syncs aussetzen oder stark begrenzen.
-4. Build lokal:
+3. Den neuen Breadcrumb `S ...` aus dem Boot-Event sichern.
+4. Falls der Reset nicht mehr in `config:*` liegt, den betroffenen HTTP-Pfad analog begrenzen oder entkoppeln.
+5. Build lokal:
 
 ```bash
 /Users/franzwolf/.platformio/penv/bin/pio run
 ```
 
-5. OTA:
+6. OTA:
 
 ```bash
 /Users/franzwolf/.platformio/penv/bin/pio run -e esp32s3_ota -t upload --upload-port 192.168.10.116
 ```
-
-6. Nach OTA Eventlog beobachten:
-   - Kommen noch `task_wdt`?
-   - Wenn ja, welches genaue `S ...`?
-   - Passieren Resets waehrend aktiver Bewaesserung?
 
 ## Wichtig
 
