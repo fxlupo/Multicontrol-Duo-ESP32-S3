@@ -1220,6 +1220,7 @@ static void handleManualTouch(uint16_t tx, uint16_t ty) {
         if (tx >= bx && tx < bx + 112 && ty >= by && ty < by + 51) {
             uint8_t zone = zoneIdAt(i);
             if (valve::isOpen(zone)) {
+                scheduler::clearQueuedZone(zone);
                 valve::close(zone);
                 scheduler::clearManualRun(zone);
                 events::log(zone, "close", "manual", "Touch", 0, NAN, NAN, NAN, NAN);

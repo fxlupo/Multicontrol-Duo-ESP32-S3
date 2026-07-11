@@ -232,7 +232,7 @@ void events::postStatus() {
     doc["lastCrashHeap"]   = stability::lastBreadcrumbHeap();
     doc["ecowittOk"]       = ecowitt::ecowittOk();
     doc["valveStates"]     = valve::stateStr();
-    doc["firmwareVersion"] = "2.2.11";
+    doc["firmwareVersion"] = "2.2.12";
     doc["ipAddress"]       = WiFi.localIP().toString();
 
     JsonObject runtime = doc["runtime"].to<JsonObject>();
