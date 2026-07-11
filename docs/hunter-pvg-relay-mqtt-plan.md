@@ -372,17 +372,17 @@ Einzeile vermischt werden.
 
 Vorbereitungs-Todos Infrastruktur:
 
-- [ ] `.env` im bestehenden Mosquitto-Projekt um Bewaesserungs-User/Pass und
+- [x] `.env` im bestehenden Mosquitto-Projekt um Bewaesserungs-User/Pass und
   Device-ID erweitern.
-- [ ] Mosquitto-Startscript/Compose-Command um die neuen User und ACL-Regeln
+- [x] Mosquitto-Startscript/Compose-Command um die neuen User und ACL-Regeln
   erweitern.
-- [ ] Sicherstellen, dass Traefik den EntryPoint `mqtt` auf Port `1883`
+- [x] Sicherstellen, dass Traefik den EntryPoint `mqtt` auf Port `1883`
   wirklich nach extern veroeffentlicht.
-- [ ] Container neu starten und pruefen, dass `mosquitto_passwords` und
+- [x] Container neu starten und pruefen, dass `mosquitto_passwords` und
   `mosquitto_acl` die neuen User enthalten.
-- [ ] Von lokal extern gegen `tofu.creano.de:1883` mit den neuen Credentials
+- [x] Von lokal extern gegen `tofu.creano.de:1883` mit den neuen Credentials
   testen.
-- [ ] Testprotokoll in dieser Doku ergaenzen, bevor Web-App/ESP-Code angepasst
+- [x] Testprotokoll in dieser Doku ergaenzen, bevor Web-App/ESP-Code angepasst
   wird.
 
 Manuelle Infrastrukturtests:
@@ -423,15 +423,30 @@ mosquitto_pub -h tofu.creano.de -p 1883 \
 
 Abnahmekriterien vor Code-Aenderungen:
 
-- [ ] Publish/Subscribe mit `irrigation_backend` funktioniert fuer
+- [x] Publish/Subscribe mit `irrigation_backend` funktioniert fuer
   `irrigation/esp32-01/#`.
-- [ ] `irrigation_esp` kann Status/Event/Sensor schreiben.
+- [x] `irrigation_esp` kann Status/Event/Sensor schreiben.
 - [ ] `irrigation_esp` kann retained Config lesen.
 - [ ] `irrigation_esp` kann Command-Result schreiben.
-- [ ] `irrigation_esp` kann keine fremden Prefixe schreiben.
-- [ ] Catfeeder-User koennen keine Bewaesserungs-Topics schreiben.
+- [x] `irrigation_esp` kann keine fremden Prefixe schreiben.
+- [x] Catfeeder-User koennen keine Bewaesserungs-Topics schreiben.
 - [ ] Retained Config kann gesetzt, gelesen und geloescht werden.
 - [ ] Broker-Neustart erhaelt retained Config und Auth/ACL.
+
+Testprotokoll 2026-07-11:
+
+- Mosquitto startet sauber mit Usern `catfeeder`, `catfeeder_cam`,
+  `backend`, `irrigation_esp`, `irrigation_backend`.
+- `irrigation_backend` kann verbinden und `irrigation/esp32-01/#`
+  abonnieren.
+- `irrigation_esp` kann verbinden und auf `irrigation/esp32-01/status`
+  publishen.
+- ACL-Trennung erfolgreich:
+  - `irrigation_esp` schreibt nicht nach `catfeeder/#`.
+  - Catfeeder-User schreiben nicht nach `irrigation/esp32-01/#`.
+- Mosquitto-Log zeigte erfolgreiche Verbindungen fuer
+  `irrigation_backend` und `irrigation_esp`; verbotene Nachrichten wurden in
+  den falschen Subscribern nicht ausgeliefert.
 
 ### Topics
 
