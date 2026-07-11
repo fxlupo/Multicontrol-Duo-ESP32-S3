@@ -38,6 +38,8 @@ namespace cfg {
 static unsigned long _lastBackendOkMs = 0;
 static unsigned long _backendBackoffUntilMs = 0;
 static uint8_t _backendErrorCount = 0;
+static String _lastConfigPayload;
+static bool _mqttConfigReady = false;
 
 static void markBackendOk() {
     _lastBackendOkMs = millis();
@@ -234,6 +236,39 @@ static void parseCommands(JsonArray arr) {
     }
 }
 
+static bool applyConfigPayload(const String& payload, const char* stage) {
+    bool configChanged = payload != _lastConfigPayload;
+    if (configChanged) _lastConfigPayload = payload;
+
+    JsonDocument doc;
+    DeserializationError err = deserializeJson(doc, payload);
+    if (err) {
+        API_DBG_PRINTF("[cfg] %s json error=%s\n", stage ? stage : "config", err.c_str());
+        markBackendError(stage ? stage : "config:parse");
+        return false;
+    }
+    if (!doc["zones"].is<JsonArray>() || !doc["schedules"].is<JsonArray>()) {
+        API_DBG_PRINTF("[cfg] %s missing zones/schedules\n", stage ? stage : "config");
+        markBackendError(stage ? stage : "config:shape");
+        return false;
+    }
+
+    if (configChanged) {
+        cfg::version++;
+        parseZones(doc["zones"].as<JsonArray>());
+        parseSchedules(doc["schedules"].as<JsonArray>());
+        parseControl(doc["control"].as<JsonObject>());
+        API_DBG_PRINTF("[cfg] config parsed zones=%u schedules=%u version=%lu\n",
+                       (unsigned)zoneCount,
+                       (unsigned)schedCount,
+                       (unsigned long)cfg::version);
+        stability::mark("config:save");
+        saveToNVS();
+        wdt::feed();
+    }
+    return configChanged;
+}
+
 static bool commandAlreadyQueued(const char* id) {
     if (!id || !id[0]) return false;
     for (uint8_t i = 0; i < cfg::cmdCount; i++) {
@@ -268,6 +303,14 @@ void cfg::handleMqttCommand(const char* id, const String& payload) {
     mc.duration_min = c["durationMin"] | c["duration_min"] | 10;
     mc.source_mqtt = true;
     publishMqttCommandResult(id, "acked", true, "received");
+}
+
+void cfg::handleMqttConfig(const String& payload) {
+    if (payload.length() == 0) return;
+    stability::mark("mqtt:config");
+    bool changed = applyConfigPayload(payload, "mqtt:config");
+    _mqttConfigReady = true;
+    if (changed) markBackendOk();
 }
 
 static bool fetchCommands() {
@@ -325,7 +368,10 @@ bool cfg::sync() {
         API_DBG_PRINTLN("[cfg] valve open: commands only");
         return fetchCommands();
     }
-    static String lastConfigPayload;
+    if (mqtt::connected() && _mqttConfigReady) {
+        API_DBG_PRINTLN("[cfg] config skip: mqtt retained active");
+        return fetchCommands();
+    }
 
     stability::mark("config:get");
     String url = "/config";
@@ -342,36 +388,9 @@ bool cfg::sync() {
     }
     markBackendOk();
 
-    String payload = response.body;
-    bool configChanged = payload != lastConfigPayload;
-    if (configChanged) lastConfigPayload = payload;
-
-    JsonDocument doc;
-    DeserializationError err = deserializeJson(doc, payload);
-    if (err) {
-        API_DBG_PRINTF("[cfg] config json error=%s\n", err.c_str());
-        markBackendError("config:parse");
-        return false;
-    }
-
-    if (configChanged) {
-        version++;
-        parseZones(doc["zones"].as<JsonArray>());
-        parseSchedules(doc["schedules"].as<JsonArray>());
-        parseControl(doc["control"].as<JsonObject>());
-        API_DBG_PRINTF("[cfg] config parsed zones=%u schedules=%u version=%lu\n",
-                       (unsigned)zoneCount,
-                       (unsigned)schedCount,
-                       (unsigned long)version);
-    }
+    bool configChanged = applyConfigPayload(response.body, "config:parse");
 
     bool commandsChanged = fetchCommands();
-
-    if (configChanged) {
-        stability::mark("config:save");
-        saveToNVS();
-        wdt::feed();
-    }
     return configChanged || commandsChanged;
 }
 

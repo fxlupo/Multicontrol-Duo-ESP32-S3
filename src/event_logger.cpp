@@ -207,6 +207,11 @@ bool events::loadRecentFromBackend(uint8_t limit) {
 void events::flush() {
     if (!wifi::isConnected() || _count == 0) return;
     if (valve::getOpenZone() > 0) return;
+    if (mqtt::connected()) {
+        _head = (_head + _count) % EVENT_BUF_SIZE;
+        _count = 0;
+        return;
+    }
     uint8_t toSend = min(_count, (uint8_t)20);
     String body;
     if (!buildEventBatch(body, toSend, false)) return;
@@ -243,7 +248,7 @@ void events::postStatus() {
     doc["lastCrashHeap"]   = stability::lastBreadcrumbHeap();
     doc["ecowittOk"]       = ecowitt::ecowittOk();
     doc["valveStates"]     = valve::stateStr();
-    doc["firmwareVersion"] = "2.2.19";
+    doc["firmwareVersion"] = "2.2.20";
     doc["ipAddress"]       = WiFi.localIP().toString();
 
     JsonObject runtime = doc["runtime"].to<JsonObject>();
@@ -258,7 +263,7 @@ void events::postStatus() {
 
     String body;
     serializeJson(doc, body);
-    mqtt::publishJson("status", body, true);
+    if (mqtt::publishJson("status", body, true)) return;
     postJson("status", "/status", body);
 }
 
@@ -281,6 +286,6 @@ void events::uploadSensors() {
     if (arr.size() == 0) return;
     String body;
     serializeJson(doc, body);
-    mqtt::publishJson("sensors", body);
+    if (mqtt::publishJson("sensors", body)) return;
     postJson("sensors", "/sensors", body);
 }

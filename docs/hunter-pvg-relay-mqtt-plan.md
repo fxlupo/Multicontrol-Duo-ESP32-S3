@@ -815,9 +815,17 @@ Status: in Umsetzung ab Firmware `2.2.19`.
      - Manueller Lauf V2 aus Web-App `1.9.12` wurde ausgefuehrt und sauber
        geloggt: Oeffnen 15 min, Schliessen nach manuellem Stop mit 16 s.
 3. Danach:
-   - HTTP-Config-Sync durch retained MQTT-Config ersetzen.
-   - HTTP-Status/Sensors/Events abschalten oder nur als Fallback behalten.
-   - Stabilitaetsnotizen aktualisieren.
+   - Status: in Umsetzung mit Backend `1.9.13` und Firmware `2.2.20`.
+   - Backend publiziert Device-Config retained auf
+     `irrigation/esp32-01/config`.
+   - ESP subscribed retained Config und nutzt HTTP `/config` nur noch als
+     Fallback, solange keine MQTT-Config angekommen ist.
+   - Status und Sensoren werden bei erfolgreichem MQTT-Publish nicht mehr
+     zusaetzlich per HTTP gepostet.
+   - Eventlog-HTTP-Flush wird bei bestehender MQTT-Verbindung geleert, weil
+     Events bereits beim Entstehen per MQTT publiziert werden.
+   - HTTP-Commands bleiben vorerst als Safety-Net aktiv, bis der manuelle
+     Command-Pfad ueber MQTT laenger stabil beobachtet wurde.
 
 ## Offene Entscheidungen
 

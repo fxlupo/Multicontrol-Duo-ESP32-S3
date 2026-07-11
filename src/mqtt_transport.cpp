@@ -48,6 +48,7 @@ namespace {
     unsigned long lastReconnectMs = 0;
     bool initialized = false;
     mqtt::CommandCallback commandCallback = nullptr;
+    mqtt::ConfigCallback configCallback = nullptr;
 
     String baseTopic() {
         return String(MQTT_TOPIC_PREFIX) + "/" + MQTT_DEVICE_ID;
@@ -83,6 +84,8 @@ namespace {
             client.publish(willTopic.c_str(), "online", true);
             String commandTopic = topic("commands/+");
             client.subscribe(commandTopic.c_str());
+            String configTopic = topic("config");
+            client.subscribe(configTopic.c_str());
             stability::mark("mqtt:online");
         } else {
             stability::mark("mqtt:fail");
@@ -93,16 +96,22 @@ namespace {
 
     void onMessage(char* rawTopic, byte* payload, unsigned int length) {
         String topicText(rawTopic ? rawTopic : "");
-        String prefix = topic("commands/");
-        if (!topicText.startsWith(prefix)) return;
-        String commandId = topicText.substring(prefix.length());
-        if (commandId.length() == 0 || commandId.indexOf('/') >= 0) return;
-
         String body;
         body.reserve(length);
         for (unsigned int i = 0; i < length; i++) {
             body += (char)payload[i];
         }
+
+        if (topicText == topic("config")) {
+            if (configCallback) configCallback(body);
+            return;
+        }
+
+        String prefix = topic("commands/");
+        if (!topicText.startsWith(prefix)) return;
+        String commandId = topicText.substring(prefix.length());
+        if (commandId.length() == 0 || commandId.indexOf('/') >= 0) return;
+
         if (commandCallback) commandCallback(commandId.c_str(), body);
     }
 }
@@ -123,6 +132,10 @@ void mqtt::init() {
 
 void mqtt::setCommandCallback(CommandCallback callback) {
     commandCallback = callback;
+}
+
+void mqtt::setConfigCallback(ConfigCallback callback) {
+    configCallback = callback;
 }
 
 void mqtt::loop() {
