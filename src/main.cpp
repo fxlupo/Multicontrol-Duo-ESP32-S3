@@ -79,7 +79,7 @@ static void runRelayDiagnostic() {
 static void notifyBootStatus(bool rtcAvailable, bool rtcTimeOk) {
     String online = String("IP ") + WiFi.localIP().toString() +
                     ", Reset: " + stability::resetReasonText() +
-                    ", FW 2.2.17";
+                    ", FW 2.2.19";
     notify::enqueue("ESP online", online);
 
     if (stability::resetWasCrash()) {

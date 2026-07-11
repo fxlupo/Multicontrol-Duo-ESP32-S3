@@ -115,8 +115,8 @@ static bool postCommandState(const char* id, const char* state, bool ok, const c
     return code >= 200 && code < 300;
 }
 
-static void publishMqttCommandResult(const char* id, const char* status, bool ok, const char* resultText) {
-    if (!id || !id[0]) return;
+static bool publishMqttCommandResult(const char* id, const char* status, bool ok, const char* resultText) {
+    if (!id || !id[0]) return false;
     JsonDocument doc;
     doc["id"] = id;
     doc["status"] = status ? status : "done";
@@ -125,7 +125,7 @@ static void publishMqttCommandResult(const char* id, const char* status, bool ok
     doc["source"] = "esp32";
     String body;
     serializeJson(doc, body);
-    mqtt::publishJson((String("commands/") + id + "/result").c_str(), body);
+    return mqtt::publishJson((String("commands/") + id + "/result").c_str(), body);
 }
 
 void cfg::loadFromNVS() {
@@ -230,6 +230,7 @@ static void parseCommands(JsonArray arr) {
         mc.zone_id      = c["zoneNumber"]   | c["zone_number"] | zoneNumberFromZoneId(c["zoneId"] | c["zone_id"] | "");
         strlcpy(mc.command, c["command"] | "close", sizeof(mc.command));
         mc.duration_min = c["durationMin"]  | c["duration_min"] | 10;
+        mc.source_mqtt  = false;
     }
 }
 
@@ -265,10 +266,16 @@ void cfg::handleMqttCommand(const char* id, const String& payload) {
     mc.zone_id = c["zoneNumber"] | c["zone_number"] | zoneNumberFromZoneId(c["zoneId"] | c["zone_id"] | "");
     strlcpy(mc.command, c["command"] | "close", sizeof(mc.command));
     mc.duration_min = c["durationMin"] | c["duration_min"] | 10;
+    mc.source_mqtt = true;
     publishMqttCommandResult(id, "acked", true, "received");
 }
 
 static bool fetchCommands() {
+    if (cfg::cmdCount > 0) {
+        API_DBG_PRINTLN("[cfg] commands skip: local queue active");
+        return false;
+    }
+
     stability::mark("config:commands");
     String cmdUrl = "/commands";
     API_DBG_PRINT("[cfg] GET ");
@@ -372,8 +379,13 @@ void cfg::ackCommands() {
     if (!wifi::isConnected() || cmdCount == 0) return;
 
     for (uint8_t i = 0; i < cmdCount; i++) {
-        postCommandState(commands[i].id, "done", true, "executed");
-        publishMqttCommandResult(commands[i].id, "done", true, "executed");
+        bool mqttDone = false;
+        if (commands[i].source_mqtt) {
+            mqttDone = publishMqttCommandResult(commands[i].id, "done", true, "executed");
+        }
+        if (!commands[i].source_mqtt || !mqttDone) {
+            postCommandState(commands[i].id, "done", true, "executed");
+        }
     }
     cmdCount = 0;
 }

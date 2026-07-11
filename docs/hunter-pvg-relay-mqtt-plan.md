@@ -779,9 +779,45 @@ Status: produktiv getestet, HTTP bleibt Fallback.
 
 ### Phase 6: HTTP reduzieren
 
-1. HTTP-Config-Sync durch retained MQTT-Config ersetzen.
-2. HTTP-Status/Sensors/Events abschalten oder nur als Fallback behalten.
-3. Stabilitaetsnotizen aktualisieren.
+Status: in Umsetzung ab Firmware `2.2.19`.
+
+1. Commands:
+   - MQTT ist primaerer Command-Weg.
+   - HTTP `GET /commands` bleibt als Safety-Net aktiv, wird aber nur genutzt,
+     wenn die lokale Command-Queue leer ist.
+   - Commands merken ihre Quelle:
+     - MQTT-Commands werden per MQTT-Result bestaetigt.
+     - HTTP-Fallback-Commands werden per HTTP bestaetigt.
+     - Wenn das MQTT-`done` fehlschlaegt, versucht die Firmware fuer Backend-
+       Commands zusaetzlich HTTP `done`.
+2. Naechster Test:
+   - Firmware `2.2.18` bauen und OTA flashen. Erledigt am 2026-07-11.
+   - Mit Web-App `1.9.12` Kurzlauf starten.
+   - MQTT pruefen: Command kommt, Result liefert `acked` und `done`.
+   - Im Backend/Eventlog pruefen: keine Duplikate.
+   - MQTT kurz trennen oder Broker stoppen und pruefen, dass HTTP-Fallback fuer
+     Commands weiterhin funktioniert.
+   - CLI-Test nach OTA:
+     - MQTT-Status meldet `firmwareVersion: 2.2.18`, `resetReason: software`
+       und `valveStates: 000000`.
+     - `close_all` auf `commands/codex-close-all-004` lieferte `acked` und
+       `done`.
+   - Produktivtest Web-App `1.9.12` mit Firmware `2.2.18`:
+     - Scheduler laeuft sauber.
+     - Manuelle Web-App-Commands kommen nicht beim ESP an, wenn der Backend-
+       MQTT-Publisher keinen Command publiziert.
+     - Konsequenz fuer `2.2.19`: HTTP-Command-Fallback wieder aktiv lassen,
+       aber nur bei leerer lokaler Queue, damit MQTT-Commands nicht
+       ueberschrieben werden.
+   - Firmware `2.2.19` per OTA geflasht und produktiv getestet:
+     - MQTT-Live-Status meldet `firmwareVersion: 2.2.19`,
+       `resetReason: software` und `valveStates: 000000`.
+     - Manueller Lauf V2 aus Web-App `1.9.12` wurde ausgefuehrt und sauber
+       geloggt: Oeffnen 15 min, Schliessen nach manuellem Stop mit 16 s.
+3. Danach:
+   - HTTP-Config-Sync durch retained MQTT-Config ersetzen.
+   - HTTP-Status/Sensors/Events abschalten oder nur als Fallback behalten.
+   - Stabilitaetsnotizen aktualisieren.
 
 ## Offene Entscheidungen
 
