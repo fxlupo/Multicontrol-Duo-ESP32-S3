@@ -1,12 +1,29 @@
 # Hunter PVG / Relay / MQTT Umbauplan
 
-Stand: 2026-06-30
+Stand: 2026-07-11
 
-## Aktueller Stand 2026-06-30
+## Produktivstand 2026-07-11
 
-- Das Board ist wieder produktiv online:
+- Das Board ist produktiv online:
   - IP: `192.168.10.116`
-  - OTA ist wieder moeglich.
+  - OTA ist moeglich und wurde mehrfach erfolgreich genutzt.
+  - Firmware `2.2.20` laeuft produktiv.
+- Web-App/Backend `jninty-de` Version `1.9.14` ist produktiv deployed.
+- MQTT ist der normale Live-Kommunikationsweg:
+  - Broker: `tofu.creano.de:1883`
+  - Prefix: `irrigation/esp32-01/#`
+  - Status: `irrigation/esp32-01/status`, retained.
+  - Config: `irrigation/esp32-01/config`, retained.
+  - Events: `irrigation/esp32-01/events`.
+  - Sensoren: `irrigation/esp32-01/sensors`.
+  - Commands: `irrigation/esp32-01/commands/<id>` plus
+    `commands/<id>/result`.
+- HTTP ist im Normalbetrieb weitgehend raus:
+  - `/config` bleibt nur Fallback, solange keine retained MQTT-Config angekommen
+    ist.
+  - Status/Sensoren/Events werden nur noch per HTTP gesendet, wenn MQTT-Publish
+    nicht klappt.
+  - `/commands` bleibt bewusst als Safety-Net aktiv.
 - Das Relaisboard ist an den acht Ausgaengen angeschlossen, die vorher die
   H-Bruecken gesteuert haben.
 - Lokales Pinlayout:
@@ -25,8 +42,6 @@ Stand: 2026-06-30
   - Default: `RELAY_ACTIVE_LOW 1`, `RELAY_ZONE_COUNT 6`.
 - Relais-Diagnose:
   - `esp32s3_relay_diag` schaltet IN1-IN6 nacheinander per USB-Testfirmware.
-- Build und USB-Upload auf `/dev/tty.wchusbserial58881023701` waren
-  erfolgreich.
 - Relais-Hardwaretest erfolgreich:
   - Ausgangs-LEDs schalten.
   - Relais ziehen nach korrekter `VCC` + `JD-VCC` 5V-Versorgung an.
@@ -46,57 +61,51 @@ Stand: 2026-06-30
     Sensorwert alt/fehlend ist.
 - Echtes GW1200-JSON wurde geprueft: Bodenwerte kommen unter `ch_ec`
   (`channel`, `humidity`, `temp`, `ec`). Der Parser wurde darauf erweitert.
-- OTA-Update auf `192.168.10.116` war erfolgreich.
-- Produktivbeobachtung 2026-07-08:
-  - Ventile eingebaut; Scheduler und Sensor-Skips arbeiten plausibel.
-  - Beispiele: V1/V4 skippen bei feuchtem Boden, V2/V3 laufen per Scheduler.
-  - Bug gefunden: manuelle `close`-Events konnten wegen `millis() - 0`
-    Uptime statt Ventil-Laufzeit als Dauer melden (`1145x min`). Lokal
-    korrigiert; beim naechsten OTA mit ausrollen.
+- Produktivbeobachtung 2026-07-11:
+  - Manuelle Web-App-Steuerung reagiert mit minimaler Verzoegerung.
+  - Scheduler-Laeufe werden sauber an den ESP uebertragen und ausgefuehrt.
+  - MQTT-Umstellung ist im praktischen Betrieb die bessere Entscheidung.
 
-## Naechste Session
+## Abschlussstand
 
-Direkt hier anknuepfen:
+Erledigt:
 
-1. Mit 24VAC/Ventilen testen:
-   - Erledigt: manueller Test Zone 1-6 mit 24VAC-Ventilen erfolgreich.
-2. Backend/Frontend auf 6 Zonen absichern:
-   - Erledigt im lokalen Clone `jninty-de`: Default-Zonen 1-6, Statusanzeige,
-     Dashboard, History-Legende und manuelle Steuerung verwenden sechs Zonen.
-   - Noch separat pruefen: Export/Import fuer Zone 5/6.
-3. Ecowitt-/Zeitsteuerung produktiv machen:
-   - Zone 1-4: WH52/GW1200 Channel 1-4 in History-Graphen und Scheduler-
-     Feuchteentscheidung nutzen.
-   - Zone 5/6: beide auf WH52/GW1200 Channel 5 mappen. Channel 5 liegt in der
-     freien Flaeche und ist kein zonescharfer Sensor, aber ein brauchbarer
-     Regen-/Feuchteindikator fuer beide Zusatzventile.
-   - Produktiv im Web-Backend kontrollieren: V5 und V6 muessen beide
-     `WH52 Ch 5` zeigen. Falls V6 noch `WH52 Ch 6` zeigt, im Dashboard bei
-     Zone 6 auf `Bearbeiten` gehen und `WH52 Ch` auf `5` setzen.
-4. OpenSprinkler-Referenz vor allem fuer Queue-/Status-/Sperrlogik nutzen,
-   nicht primaer fuer MQTT:
-   - Runtime-Queue mit `running`/`queued`/`idle` und Restzeit als eigener
-     Firmware-State statt aus Eventlog abgeleitet.
-   - Manuelle Queue-Optionen spaeter bewusst definieren:
-     `replace`, `append`, `front`, `reject_if_busy`.
-   - OpenSprinkler-App-Idee fuer spaeter vormerken: Run-Once/Testprogramm mit
-     Dauer pro Zone, z.B. "alle Zonen je 60s testen".
-   - Program Preview gehoert in die Web-App, nicht aufs ESP-TFT: naechste
-     7 Tage mit geplanten Laeufen, erwarteter Dauer und Sensor-Skip-Hinweisen.
-   - Eventlog/History in der App um Zeitraumfilter, Gruppierung nach Tag/Zone,
-     Summen und Export erweitern.
-   - Zone-spezifische Flags fuer Sensor-/Rain-Ignore und globale Sperren
-     einplanen.
-   - Master-/Pumpenrelais erst als spaetere Option pruefen.
-5. Vor Queue-/MQTT-Implementierung die OpenSprinkler-Referenznotizen
-   beruecksichtigen:
-   `docs/opensprinkler-reference-notes.md`.
-   Fuer die konkret geplanten App-Verbesserungen:
-   `docs/opensprinkler-app-implementation-plan.md`.
-6. MQTT bewusst nach unten priorisieren:
-   - zuerst Status/Events/Sensoren parallel,
-   - danach Commands,
-   - HTTP erst entfernen, wenn MQTT stabil laeuft.
+1. Hardware:
+   - Relaisboard produktiv an den acht ehemaligen H-Bruecken-Ausgaengen.
+   - Zone 1-6 schalten ueber Relais 1-6.
+   - Relais 7-8 bleiben Reserve.
+   - 24VAC-/Ventiltest erfolgreich.
+2. Sensorik:
+   - V1-V4 nutzen WH52/GW1200 Channel 1-4.
+   - V5/V6 nutzen gemeinsam WH52/GW1200 Channel 5.
+   - Kein Channel 6 in der History.
+3. Firmware:
+   - Relais-Dauerbetrieb statt H-Bruecken-Pulse.
+   - Runtime-State mit `idle`/`running`/`queued`, Restzeit und Queue-Laenge.
+   - Lokale Sensor-History vom TFT entfernt; TFT zeigt Live-Werte.
+   - Manual-Close-Dauer korrigiert.
+   - MQTT-Transport fuer Config, Status, Sensoren, Events und Commands.
+4. Web-App/Backend:
+   - 6 Zonen.
+   - 7-Tage-History mit echten Sensordaten.
+   - Program Preview.
+   - Controller enabled/disabled und Rain Delay.
+   - Run-Once/Testlaeufe.
+   - MQTT-Subscriber/Publisher produktiv aktiv.
+   - Docker Compose liest Bewaesserungs-/MQTT-Werte aus `.env`.
+5. Tests:
+   - Retained Config enthaelt echte `zones`, `schedules`, `control`.
+   - MQTT-Status meldet Firmware `2.2.20`, `valveStates: 000000`,
+     Queue leer.
+   - MQTT-Command `close_all` lieferte `acked` und `done`.
+   - Manuelle Web-App- und Scheduler-Tests erfolgreich.
+
+Bewusst offen:
+
+1. HTTP `/commands` bleibt als Safety-Net aktiv.
+2. TLS fuer MQTT wird spaeter entschieden; aktuell TCP mit Auth/ACL.
+3. Soak-Test ueber die naechsten Nachtlaeufe passiert im normalen
+   Produktivbetrieb.
 
 ## Folgeplan ab 2026-07-11
 
@@ -697,7 +706,7 @@ manuell getestet. Catfeeder- und Bewaesserungs-Topics sind getrennt.
 
 ### Phase 4b: MQTT parallel einfuehren
 
-Status: vorbereitet im Code, noch nicht produktiv aktiviert.
+Status: erledigt und produktiv aktiv.
 
 1. ESP MQTT-Client einbauen:
    - erledigt: `mqtt_transport` mit PubSubClient, Firmware `2.2.14`.
@@ -711,7 +720,7 @@ Status: vorbereitet im Code, noch nicht produktiv aktiviert.
    - erledigt: `status` retained auf `irrigation/esp32-01/status`.
    - erledigt: `events` auf `irrigation/esp32-01/events`.
    - erledigt: `sensors` auf `irrigation/esp32-01/sensors`.
-   - HTTP-POSTs bleiben parallel aktiv.
+   - HTTP-POSTs bleiben nur als Fallback aktiv.
    - MQTT-Test erfolgreich:
      - `availability` meldet `online`.
      - `status` meldet Firmware `2.2.14`, IP `192.168.10.116`,
@@ -723,11 +732,10 @@ Status: vorbereitet im Code, noch nicht produktiv aktiviert.
    - erledigt hinter `IRRIGATION_MQTT_ENABLED`.
    - bei `IRRIGATION_MQTT_ENABLED=false` startet kein MQTT-Subscriber.
    - nutzt denselben DB-Ingest wie die bestehenden Device-HTTP-Routen.
-4. Naechste Tests:
-   - Danach Backend-Flag testweise auf `true` setzen und pruefen, dass die App
-     weiterhin Status/Eventlog/History aktualisiert.
-   - Wenn doppelte Daten stoeren, MQTT-Subscriber erst nach finaler Umschaltung
-     aktivieren oder Dedup-Logik fuer Events/Sensoren einfuehren.
+4. Produktivstand:
+   - Backend-Flag ist produktiv aktiv.
+   - App aktualisiert Status/Eventlog/History ueber MQTT-Ingest.
+   - HTTP wird nur noch als Fallback genutzt, wenn MQTT nicht verfuegbar ist.
 
 ### Phase 5: Commands auf MQTT umstellen
 
@@ -779,7 +787,7 @@ Status: produktiv getestet, HTTP bleibt Fallback.
 
 ### Phase 6: HTTP reduzieren
 
-Status: in Umsetzung ab Firmware `2.2.19`.
+Status: produktiv umgesetzt mit Backend `1.9.14` und Firmware `2.2.20`.
 
 1. Commands:
    - MQTT ist primaerer Command-Weg.
@@ -790,7 +798,7 @@ Status: in Umsetzung ab Firmware `2.2.19`.
      - HTTP-Fallback-Commands werden per HTTP bestaetigt.
      - Wenn das MQTT-`done` fehlschlaegt, versucht die Firmware fuer Backend-
        Commands zusaetzlich HTTP `done`.
-2. Naechster Test:
+2. Tests:
    - Firmware `2.2.18` bauen und OTA flashen. Erledigt am 2026-07-11.
    - Mit Web-App `1.9.12` Kurzlauf starten.
    - MQTT pruefen: Command kommt, Result liefert `acked` und `done`.
@@ -814,8 +822,7 @@ Status: in Umsetzung ab Firmware `2.2.19`.
        `resetReason: software` und `valveStates: 000000`.
      - Manueller Lauf V2 aus Web-App `1.9.12` wurde ausgefuehrt und sauber
        geloggt: Oeffnen 15 min, Schliessen nach manuellem Stop mit 16 s.
-3. Danach:
-   - Status: in Umsetzung mit Backend `1.9.13` und Firmware `2.2.20`.
+3. Config/Telemetry:
    - Backend publiziert Device-Config retained auf
      `irrigation/esp32-01/config`.
    - ESP subscribed retained Config und nutzt HTTP `/config` nur noch als
@@ -838,20 +845,22 @@ Status: in Umsetzung ab Firmware `2.2.19`.
 
 ## Offene Entscheidungen
 
-- TLS sofort oder erst spaeter?
-- MQTT retained Config: nur Backend schreibt, ESP liest.
-- MQTT Commands: beim ersten Umbau nur Status/Events/Sensoren oder direkt auch
-  Commands?
-- HTTP-Fallback: wie lange parallel behalten, bevor `/commands` und Status-POST
-  reduziert werden?
+- TLS fuer MQTT:
+  - aktuell bewusst nicht umgesetzt.
+  - Broker laeuft ueber TCP mit getrennten Usern, Passwort und ACL.
+  - TLS spaeter pruefen, wenn externer Zugriff oder hoehere Security-Anforderung
+    wichtiger wird.
+- HTTP-Command-Fallback:
+  - `/commands` bleibt aktiv, aber nur als Safety-Net.
+  - Entfernen erst nach mehreren stabilen Tagen mit manuellen MQTT-Commands.
 
 ## Empfehlung
 
-Erster stabiler Zielstand:
+Erreichter stabiler Zielstand:
 
 - 6 Hunter PVG-101 an Relais 1-6.
 - Relais 7-8 Reserve.
 - GPIO4/5/6/7/15/16 fuer Zone 1-6.
 - Display, RTC, Ecowitt und lokale Schedulerlogik bleiben.
-- MQTT zuerst fuer Status/Events/Sensoren, danach Commands.
-- HTTP erst entfernen, wenn MQTT mehrere Tage stabil laeuft.
+- MQTT fuer Config, Status, Events, Sensoren und Commands.
+- HTTP nur noch als Fallback, insbesondere fuer Commands.
