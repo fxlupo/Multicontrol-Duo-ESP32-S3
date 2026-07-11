@@ -14,6 +14,7 @@
 #include "ota_update.h"
 #include "notifications.h"
 #include "stability.h"
+#include "mqtt_transport.h"
 
 #ifndef BACKEND_DEAD_MS
 #define BACKEND_DEAD_MS 300000UL
@@ -78,7 +79,7 @@ static void runRelayDiagnostic() {
 static void notifyBootStatus(bool rtcAvailable, bool rtcTimeOk) {
     String online = String("IP ") + WiFi.localIP().toString() +
                     ", Reset: " + stability::resetReasonText() +
-                    ", FW 2.2.9";
+                    ", FW 2.2.15";
     notify::enqueue("ESP online", online);
 
     if (stability::resetWasCrash()) {
@@ -673,6 +674,8 @@ void setup() {
     wifi::connect();
     stability::mark("setup:ota");
     ota::init();
+    stability::mark("setup:mqtt");
+    mqtt::init();
     stability::mark("setup:notify");
     notify::init();
     notifyBootStatus(rtcAvailable, rtcTimeOk);
@@ -730,6 +733,8 @@ void loop() {
     // WiFi-Reconnect prüfen
     stability::mark("loop:wifi");
     wifi::loop();
+    stability::mark("loop:mqtt");
+    mqtt::loop();
     stability::mark("loop:ota");
     ota::handle();
     stability::mark("loop:notify");

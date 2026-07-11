@@ -673,8 +673,8 @@ MQTT. Dadurch muss der ESP keine HTTP-Polls fuer Commands mehr machen.
 
 ### Phase 4: MQTT-Infrastruktur vorbereiten
 
-Status: Planung begonnen am 2026-07-11. Keine Web-App-/ESP-Codeaenderung,
-bis Broker, ACL und manueller Test sauber erledigt sind.
+Status: erledigt am 2026-07-11. Broker, Auth/ACL und retained Messages wurden
+manuell getestet. Catfeeder- und Bewaesserungs-Topics sind getrennt.
 
 1. Bestehenden Mosquitto unter `tofu.creano.de:1883` fuer Bewaesserung
    vorbereiten:
@@ -689,17 +689,45 @@ bis Broker, ACL und manueller Test sauber erledigt sind.
    - positive Publish/Subscribe-Tests.
    - negative ACL-Tests.
    - retained Config setzen/lesen/loeschen.
-5. Erst nach erfolgreichem Test:
-   - ESP MQTT-Client einbauen.
-   - Backend MQTT-Subscriber/Publisher einbauen.
-   - HTTP parallel weiterlaufen lassen.
+   - Broker-Neustart erhaelt retained Config sowie Auth/ACL.
+5. Credentials abgelegt:
+   - ESP: lokal in `firmware/include/config.h`, nicht getrackt.
+   - Backend: lokal/produktiv in `.env` bzw. Docker-Environment, nicht
+     getrackt.
 
-### Phase 4b: MQTT parallel einfuehren, spaeter
+### Phase 4b: MQTT parallel einfuehren
 
-1. ESP MQTT-Client einbauen.
-2. Status/Event/Sensor per MQTT publishen.
-3. Backend MQTT-Subscriber schreibt Live-State/Events.
-4. HTTP-Status parallel noch aktiv lassen, bis Live-State stabil ist.
+Status: vorbereitet im Code, noch nicht produktiv aktiviert.
+
+1. ESP MQTT-Client einbauen:
+   - erledigt: `mqtt_transport` mit PubSubClient, Firmware `2.2.14`.
+   - OTA auf `192.168.10.116` erfolgreich am 2026-07-11 14:25 CEST.
+   - Nachtest: Events werden ab Firmware `2.2.15` direkt bei
+     `events::log(...)` auf MQTT publiziert; HTTP-Eventlog bleibt parallel
+     gepuffert.
+   - nutzt `MQTT_ENABLED`, `MQTT_HOST`, `MQTT_PORT`, `MQTT_DEVICE_ID`,
+     `MQTT_TOPIC_PREFIX`, `MQTT_USER`, `MQTT_PASS` aus lokaler `config.h`.
+2. Status/Event/Sensor per MQTT publishen:
+   - erledigt: `status` retained auf `irrigation/esp32-01/status`.
+   - erledigt: `events` auf `irrigation/esp32-01/events`.
+   - erledigt: `sensors` auf `irrigation/esp32-01/sensors`.
+   - HTTP-POSTs bleiben parallel aktiv.
+   - MQTT-Test erfolgreich:
+     - `availability` meldet `online`.
+     - `status` meldet Firmware `2.2.14`, IP `192.168.10.116`,
+       `valveStates` `000000`, Runtime fuer Zone 1-6 `idle`.
+     - `sensors` liefert WH52/GW1200 Channel 1-5.
+     - `events` getestet mit manuellem Zone-2-Lauf:
+       `open` und `close` kamen sofort per MQTT, Close mit `durationSec`.
+3. Backend MQTT-Subscriber schreibt Live-State/Events/Sensoren:
+   - erledigt hinter `IRRIGATION_MQTT_ENABLED`.
+   - bei `IRRIGATION_MQTT_ENABLED=false` startet kein MQTT-Subscriber.
+   - nutzt denselben DB-Ingest wie die bestehenden Device-HTTP-Routen.
+4. Naechste Tests:
+   - Danach Backend-Flag testweise auf `true` setzen und pruefen, dass die App
+     weiterhin Status/Eventlog/History aktualisiert.
+   - Wenn doppelte Daten stoeren, MQTT-Subscriber erst nach finaler Umschaltung
+     aktivieren oder Dedup-Logik fuer Events/Sensoren einfuehren.
 
 ### Phase 5: Commands auf MQTT umstellen
 
@@ -717,9 +745,6 @@ bis Broker, ACL und manueller Test sauber erledigt sind.
 
 ## Offene Entscheidungen
 
-- MQTT Credentials final in `.env` festlegen und sicher ablegen.
-- Mosquitto-ACL im bestehenden Compose-Command erweitern oder in eine eigene
-  generierte Datei auslagern.
 - TLS sofort oder erst spaeter?
 - MQTT retained Config: nur Backend schreibt, ESP liest.
 - MQTT Commands: beim ersten Umbau nur Status/Events/Sensoren oder direkt auch

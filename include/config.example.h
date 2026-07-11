@@ -15,6 +15,14 @@
 #define ESP_API_KEY      "<IRRIGATION_DEVICE_TOKEN>"
 #define API_AUTH_BEARER  1   // Jninty Device API: Authorization: Bearer <token>
 
+#define MQTT_ENABLED      0
+#define MQTT_HOST         "tofu.creano.de"
+#define MQTT_PORT         1883
+#define MQTT_DEVICE_ID    "esp32-01"
+#define MQTT_TOPIC_PREFIX "irrigation"
+#define MQTT_USER         "irrigation_esp"
+#define MQTT_PASS         "<MQTT_IRRIGATION_DEVICE_PASS>"
+
 #define ECOWITT_IP       "10.0.0.50"   // GW1200 lokale IP, nur IP ohne http://
 #define ECOWITT_PORT     8090
 

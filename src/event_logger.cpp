@@ -6,6 +6,7 @@
 #include "scheduler.h"
 #include "ecowitt_client.h"
 #include "stability.h"
+#include "mqtt_transport.h"
 #include <ArduinoJson.h>
 #include <WiFi.h>
 #include <time.h>
@@ -92,6 +93,15 @@ static void serializeEvent(JsonObject& o, const EventEntry& e, bool legacyResetE
     o["createdAt"] = e.created_at;
 }
 
+static void publishMqttEvent(const EventEntry& e) {
+    JsonDocument doc;
+    JsonObject o = doc.to<JsonObject>();
+    serializeEvent(o, e, false);
+    String body;
+    serializeJson(doc, body);
+    mqtt::publishJson("events", body);
+}
+
 static bool buildEventBatch(String& body, uint8_t toSend, bool legacyResetEvents) {
     JsonDocument doc;
     JsonArray arr = doc.to<JsonArray>();
@@ -151,6 +161,7 @@ void events::log(uint8_t zone_id, const char* action, const char* reason,
     strlcpy(e.created_at, nowStr().c_str(), sizeof(e.created_at));
 
     addRecentEvent(e);
+    publishMqttEvent(e);
 }
 
 uint8_t events::recentCount() {
@@ -232,7 +243,7 @@ void events::postStatus() {
     doc["lastCrashHeap"]   = stability::lastBreadcrumbHeap();
     doc["ecowittOk"]       = ecowitt::ecowittOk();
     doc["valveStates"]     = valve::stateStr();
-    doc["firmwareVersion"] = "2.2.13";
+    doc["firmwareVersion"] = "2.2.15";
     doc["ipAddress"]       = WiFi.localIP().toString();
 
     JsonObject runtime = doc["runtime"].to<JsonObject>();
@@ -247,6 +258,7 @@ void events::postStatus() {
 
     String body;
     serializeJson(doc, body);
+    mqtt::publishJson("status", body, true);
     postJson("status", "/status", body);
 }
 
@@ -269,5 +281,6 @@ void events::uploadSensors() {
     if (arr.size() == 0) return;
     String body;
     serializeJson(doc, body);
+    mqtt::publishJson("sensors", body);
     postJson("sensors", "/sensors", body);
 }
