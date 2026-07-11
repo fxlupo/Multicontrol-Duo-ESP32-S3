@@ -45,6 +45,8 @@ namespace cfg {
     extern ManualCommand  commands[5];
     extern uint8_t        cmdCount;
     extern uint32_t       version;
+    extern bool           controllerEnabled;
+    extern uint32_t       rainDelayUntilEpoch;
 
     void loadFromNVS();
     bool sync();            // GET /config – true wenn neue Daten

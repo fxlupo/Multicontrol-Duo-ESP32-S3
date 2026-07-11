@@ -288,6 +288,16 @@ void scheduler::tick() {
 
             markTriggered(s.id, minOfDay, t.tm_wday);
 
+            if (!cfg::controllerEnabled) {
+                events::log(z.id, "skip", "system", "System deaktiviert", 0, NAN, NAN, NAN, NAN);
+                continue;
+            }
+            time_t nowEpoch = time(nullptr);
+            if (cfg::rainDelayUntilEpoch > 0 && nowEpoch > 0 && (uint32_t)nowEpoch < cfg::rainDelayUntilEpoch) {
+                events::log(z.id, "skip", "system", "Rain Delay", 0, NAN, NAN, NAN, NAN);
+                continue;
+            }
+
             // ── Entscheidungsbaum ──────────────────────
             bool hasFreshSensor = ecowitt::isFresh(z.wh52_channel);
             const ecowitt::SoilData& sd = hasFreshSensor

@@ -30,6 +30,8 @@ namespace cfg {
     ManualCommand commands[5]    = {};
     uint8_t       cmdCount       = 0;
     uint32_t      version        = 0;
+    bool          controllerEnabled = true;
+    uint32_t      rainDelayUntilEpoch = 0;
 }
 
 static unsigned long _lastBackendOkMs = 0;
@@ -199,6 +201,11 @@ static void parseSchedules(JsonArray arr) {
     API_DBG_PRINTF("[cfg] schedules parsed=%u\n", (unsigned)cfg::schedCount);
 }
 
+static void parseControl(JsonObject control) {
+    cfg::controllerEnabled = control["controllerEnabled"] | true;
+    cfg::rainDelayUntilEpoch = control["rainDelayUntilEpoch"] | 0;
+}
+
 static void parseCommands(JsonArray arr) {
     stability::mark("config:commands");
     cfg::cmdCount = 0;
@@ -295,6 +302,7 @@ bool cfg::sync() {
         version++;
         parseZones(doc["zones"].as<JsonArray>());
         parseSchedules(doc["schedules"].as<JsonArray>());
+        parseControl(doc["control"].as<JsonObject>());
         API_DBG_PRINTF("[cfg] config parsed zones=%u schedules=%u version=%lu\n",
                        (unsigned)zoneCount,
                        (unsigned)schedCount,

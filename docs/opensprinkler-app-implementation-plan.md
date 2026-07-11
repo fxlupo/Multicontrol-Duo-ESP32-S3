@@ -216,6 +216,9 @@ Akzeptanz:
 
 Mehrwert: Vor der Nacht sehen, was der Scheduler voraussichtlich tut.
 
+Status: umgesetzt am 2026-07-11. Web-App `1.9.9` zeigt eine 7-Tage-Vorschau
+mit Lauf/Skip-Entscheidung, Dauer und Grund.
+
 Backend:
 
 - Neuer Endpunkt:
@@ -326,6 +329,10 @@ Akzeptanz:
 
 Mehrwert: Betriebszustand wird sichtbar und steuerbar.
 
+Status: umgesetzt am 2026-07-11. Web-App `1.9.9` steuert
+`controllerEnabled` und `rainDelayUntil`; Firmware `2.2.13` skippt geplante
+Laeufe bei Sperre oder aktivem Rain Delay.
+
 Backend:
 
 - Konfig/Statusmodell fuer:
@@ -377,9 +384,8 @@ Akzeptanz:
 
 ## Empfohlene Reihenfolge ab jetzt
 
-1. P4 Program Preview als optionaler Web-App-Mehrwert.
-2. P6 Sperren/Rain Delay und P7 Import/Export nur bei konkretem Bedarf.
-3. P8 MQTT bleibt niedrig priorisiert.
+1. P8 MQTT bleibt niedrig priorisiert.
+2. P7 Import/Export nur bei konkretem Bedarf.
 
 ## Nicht jetzt
 

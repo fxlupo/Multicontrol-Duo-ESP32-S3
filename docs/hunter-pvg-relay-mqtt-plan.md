@@ -114,18 +114,14 @@ Der Relais-/6-Zonen-/Ecowitt-Produktivstand ist erreicht:
 - Run-Once/Testprogramm ist umgesetzt: Web-App Version `1.9.8` kann
   Testlaeufe fuer alle aktiven Zonen mit 10/20/30 Sekunden starten; Firmware
   `2.2.11` legt diese Laeufe in die Runtime-Queue.
+- Program Preview sowie Scheduler-Sperre/Rain Delay sind umgesetzt:
+  Web-App Version `1.9.9` zeigt die 7-Tage-Vorschau und steuert
+  `controllerEnabled`/`rainDelayUntil`; Firmware `2.2.13` beruecksichtigt die
+  Flags bei geplanten Laeufen.
 
 Naechste sinnvolle Schritte, falls wir weiter ausbauen:
 
-1. Program Preview in der Web-App optional planen:
-   - naechste 7 Tage aus Schedules + aktuellen Sensorwerten simulieren.
-   - anzeigen: Lauf wuerde starten / wuerde wegen Sensor skippen.
-   - nur als Plausibilitaetsvorschau, nicht als harte Zusage.
-2. Globale Sperren/Rain Delay nur bei Bedarf:
-   - System aktiv/deaktiviert.
-   - Pause/Rain Delay mit Endzeit.
-   - Sensor-Ignore pro Zone nur bewusst und sichtbar.
-3. MQTT bleibt unten:
+1. MQTT bleibt unten:
    - erst wenn HTTP/Polling im Produktivbetrieb wirklich stoert.
    - dann zunaechst Status/Events/Sensoren, spaeter Commands.
 
@@ -493,8 +489,12 @@ MQTT. Dadurch muss der ESP keine HTTP-Polls fuer Commands mehr machen.
   alle aktiven Zonen nacheinander mit 10/20/30 Sekunden ueber `run_once`.
   Firmware per OTA auf `192.168.10.116` ausgerollt am 2026-07-11 10:48 CEST;
   Web-App auf Version `1.9.8` vorbereitet.
-- [ ] Web-App: Program Preview vormerken (naechste 7 Tage, geplante Laufzeiten,
-  Sensor-Skip-Hinweise).
+- [x] Web-App: Program Preview umgesetzt. Die Programme-Seite zeigt die
+  naechsten 7 Tage mit Lauf/Skip-Entscheidung, Dauer und Grund.
+- [x] Web-App/Firmware: Scheduler-Sperre und Rain Delay umgesetzt.
+  `/irrigation/control` speichert `controllerEnabled` und `rainDelayUntil` im
+  Status-Raw; `/config` liefert diese Flags an den ESP. Firmware `2.2.13`
+  skippt geplante Laeufe bei Sperre/Rain Delay.
 
 ### Phase 3: OpenSprinkler-inspirierte Runtime-Logik
 
@@ -518,6 +518,8 @@ MQTT. Dadurch muss der ESP keine HTTP-Polls fuer Commands mehr machen.
    - Rain delay / Pause.
    - Sensor-/Rain-Ignore pro Zone.
    - Optional Water-Level-Prozent fuer saisonale Laufzeit-Skalierung.
+   - Status: Controller enabled/disabled und Rain Delay erledigt mit Firmware
+     `2.2.13` und Web-App `1.9.9`.
 5. Run-Once/Testprogramm:
    - Status: erledigt mit Firmware `2.2.11` und Web-App `1.9.8`.
    - Quick-Test nutzt `run_once` und die Runtime-Queue.
