@@ -430,8 +430,8 @@ Abnahmekriterien vor Code-Aenderungen:
 - [x] `irrigation_esp` kann Command-Result schreiben.
 - [x] `irrigation_esp` kann keine fremden Prefixe schreiben.
 - [x] Catfeeder-User koennen keine Bewaesserungs-Topics schreiben.
-- [ ] Retained Config kann gesetzt, gelesen und geloescht werden.
-- [ ] Broker-Neustart erhaelt retained Config und Auth/ACL.
+- [x] Retained Config kann gesetzt, gelesen und geloescht werden.
+- [x] Broker-Neustart erhaelt retained Config und Auth/ACL.
 
 Testprotokoll 2026-07-11:
 
@@ -448,6 +448,17 @@ Testprotokoll 2026-07-11:
   `irrigation/esp32-01/commands/test-manual-001/result` schreiben;
   `irrigation_backend` empfaengt
   `{"id":"test-manual-001","ok":true,"result":"manual-test","zoneNumber":0}`.
+- Retained Config Setzen/Lesen/Loeschen erfolgreich:
+  - Lesen nach Setzen lieferte
+    `{"test":true,"retained":true,"version":"manual-retain-001"}`.
+  - Nach retained Delete kam keine retained Message mehr.
+- Broker-Neustart erfolgreich:
+  - Mosquitto startet ohne Passwort-/ACL-Fehler.
+  - User `catfeeder`, `catfeeder_cam`, `backend`, `irrigation_esp`,
+    `irrigation_backend` werden angelegt.
+  - Retained Config blieb nach Neustart erhalten:
+    `{"test":true,"retained":true,"version":"after-broker-restart"}`.
+  - Backend verbindet nach Neustart wieder als User `backend`.
 - ACL-Trennung erfolgreich:
   - `irrigation_esp` schreibt nicht nach `catfeeder/#`.
   - Catfeeder-User schreiben nicht nach `irrigation/esp32-01/#`.
