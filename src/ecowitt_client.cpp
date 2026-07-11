@@ -1,8 +1,13 @@
 #include "ecowitt_client.h"
 #include "config.h"
 #include "wifi_manager.h"
+#include "stability.h"
 #include <HTTPClient.h>
 #include <ArduinoJson.h>
+
+#ifndef ECOWITT_CONNECT_TIMEOUT_MS
+#define ECOWITT_CONNECT_TIMEOUT_MS 1000
+#endif
 
 namespace ecowitt {
     SoilData    soil[ECOWITT_MAX_SOIL_CHANNELS]  = {};
@@ -12,9 +17,10 @@ namespace ecowitt {
 static unsigned long _lastPollMs = 0;
 
 // GW1200 /get_livedata_info – Werte kommen als Strings im JSON.
-// Je nach Firmware entweder data.soil oder ch_soil.
+// Je nach Firmware entweder data.soil, ch_soil oder ch_ec.
 // data.soil: {"channel":"1","soilmoisture":"32","soiltemperature":"18.5","soilec":"380"}
 // ch_soil:   {"channel":"1","humidity":"41%","ec":"869 uS/cm","temp":"20.2","unit":"C"}
+// ch_ec:     {"channel":"1","humidity":"41%","ec":"869 uS/cm","temp":"20.2","unit":"C"}
 // Format variiert je Firmware-Version – ggf. Parser anpassen.
 
 static float jsonFloat(JsonVariant v) {
@@ -29,8 +35,10 @@ bool ecowitt::poll() {
 
     HTTPClient http;
     String url = String("http://") + ECOWITT_IP + ":" + ECOWITT_PORT + "/get_livedata_info";
+    stability::mark("ecowitt:get");
     http.begin(url);
     http.setTimeout(HTTP_TIMEOUT_MS);
+    http.setConnectTimeout(ECOWITT_CONNECT_TIMEOUT_MS);
     int code = http.GET();
     if (code != 200) { http.end(); return false; }
 
@@ -57,6 +65,18 @@ bool ecowitt::poll() {
     }
     JsonArray chSoilArr = doc["ch_soil"].as<JsonArray>();
     for (JsonObject s : chSoilArr) {
+        uint8_t ch = (uint8_t)atoi(s["channel"].as<const char*>() ?: "0");
+        if (ch < 1 || ch > ECOWITT_MAX_SOIL_CHANNELS) continue;
+        SoilData& sd = ecowitt::soil[ch - 1];
+        sd.channel  = ch;
+        sd.moisture = jsonFloat(s["humidity"]);
+        sd.temp     = jsonFloat(s["temp"]);
+        sd.ec       = jsonFloat(s["ec"]);
+        sd.valid    = !isnan(sd.moisture);
+        sd.ts       = millis();
+    }
+    JsonArray chEcArr = doc["ch_ec"].as<JsonArray>();
+    for (JsonObject s : chEcArr) {
         uint8_t ch = (uint8_t)atoi(s["channel"].as<const char*>() ?: "0");
         if (ch < 1 || ch > ECOWITT_MAX_SOIL_CHANNELS) continue;
         SoilData& sd = ecowitt::soil[ch - 1];

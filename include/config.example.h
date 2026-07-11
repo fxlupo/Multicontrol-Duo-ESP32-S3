@@ -18,15 +18,20 @@
 #define ECOWITT_IP       "10.0.0.50"   // GW1200 lokale IP, nur IP ohne http://
 #define ECOWITT_PORT     8090
 
-// -- GPIO: Ventile (DRV8871) -----------------------------
-#define V1_IN1  18
-#define V1_IN2  17
-#define V2_IN1  16
-#define V2_IN2  15
-#define V3_IN1  7
-#define V3_IN2  6
-#define V4_IN1  5
-#define V4_IN2  4
+// -- GPIO: Relaisboard ------------------------------------
+// Die acht bisherigen H-Bruecken-Ausgaenge koennen direkt auf IN1-IN8
+// des Relaisboards gelegt werden. Genutzt werden initial Zone 1-6.
+#define V1_IN1  4   // IN1 / Zone 1
+#define V1_IN2  5   // IN2 / Zone 2
+#define V2_IN1  6   // IN3 / Zone 3
+#define V2_IN2  7   // IN4 / Zone 4
+#define V3_IN1  15  // IN5 / Zone 5
+#define V3_IN2  16  // IN6 / Zone 6
+#define V4_IN1  17  // IN7 / Reserve
+#define V4_IN2  18  // IN8 / Reserve
+
+#define RELAY_ACTIVE_LOW 1
+#define RELAY_ZONE_COUNT 6
 
 // -- GPIO: TFT + Touch (via platformio.ini build_flags) --
 // ILI9341: CS=41, DC=42, RST=21, BL=47
@@ -38,12 +43,12 @@
 #define RTC_SCL  2
 #define RTC_I2C_ADDR 0x68
 
-#define VALVE_OPEN_PULSE_MS   250      // Oeffnen: 250ms Vollstrom
-#define VALVE_CLOSE_PULSE_MS  63       // Schliessen: 63ms PWM
+#define VALVE_OPEN_PULSE_MS   250      // Altwert, im Relaisbetrieb nicht genutzt
+#define VALVE_CLOSE_PULSE_MS  63       // Altwert, im Relaisbetrieb nicht genutzt
 #define VALVE_CLOSE_PWM_FREQ  20000    // 20 kHz
 #define VALVE_CLOSE_PWM_BITS  8        // 8-bit, 0-255
-#define VALVE_CLOSE_DUTY      51       // 20% von 255
-#define VALVE_SEQ_PAUSE_MS    2000     // 2s Pause zwischen Zonen
+#define VALVE_CLOSE_DUTY      51       // Altwert, im Relaisbetrieb nicht genutzt
+#define VALVE_SEQ_PAUSE_MS    2000     // Altwert, im Relaisbetrieb nicht genutzt
 
 // -- Task-Intervalle (ms) ---------------------------------
 #define INTERVAL_SCHEDULER_MS    1000UL

@@ -19,7 +19,7 @@ namespace valve {
 
     bool     isOpen(uint8_t zone);
     uint8_t  getOpenZone();               // 0 wenn keines offen
-    String   stateStr();                  // "0000" .. "1000"
+    String   stateStr();                  // z.B. "000000" .. "100000"
 
     Settings settings();
     void setOpenPulseMs(uint16_t ms);

@@ -34,7 +34,7 @@
 #define TOUCH_NATIVE_KEY "touch_nat_r2"
 
 static TFT_eSPI* tft = nullptr;
-static uint8_t  _screen     = 0;   // 0=Dashboard 1=History 2=Manuell 3=System 4=Diagnose 5=Eventlog 6=OTA 7=Ventilsetup 8=Touch
+static uint8_t  _screen     = 0;   // 0=Dashboard 1=History 2=Manuell 3=System 4=Diagnose 5=Eventlog 6=OTA 7=Ausgaenge 8=Touch
 static uint8_t  _manDur     = 30;  // Manuelle Dauer in Minuten
 static bool     _smoothFonts = false;
 static bool     _touchNative = false;
@@ -122,13 +122,6 @@ static void runTouchCalibration() {
     tft->print("Kalibrierung gespeichert");
     delay(900);
 }
-
-// ── Ringpuffer Sensorhistorie ─────────────────────────────
-#define HIST_LEN 8640   // 30 Tage bei 5min-Intervall
-#define HIST_DAYS 30UL
-struct SensorPt { float m; float t; uint32_t ts; };
-static SensorPt* _hist[ECOWITT_MAX_SOIL_CHANNELS] = {};  // PSRAM
-static int _histHead = 0, _histCount = 0;
 
 // ── Hilfsfunktionen ───────────────────────────────────────
 static void drawHLine(int16_t y, uint16_t col) {
@@ -244,6 +237,35 @@ static String zoneLabel(uint8_t index, const char* fallbackPrefix = "Zone ") {
     return String(fallbackPrefix) + String(index + 1);
 }
 
+static uint8_t displayZoneCount() {
+    return min<uint8_t>(RELAY_ZONE_COUNT, cfg::MAX_ZONES);
+}
+
+static const ZoneConfig* zoneConfigAt(uint8_t index) {
+    if (index < cfg::zoneCount) return &cfg::zones[index];
+    return nullptr;
+}
+
+static uint8_t zoneIdAt(uint8_t index) {
+    const ZoneConfig* z = zoneConfigAt(index);
+    return z ? z->id : (uint8_t)(index + 1);
+}
+
+static uint8_t zoneSensorChannel(uint8_t index) {
+    const ZoneConfig* z = zoneConfigAt(index);
+    return z ? z->wh52_channel : (uint8_t)(index + 1);
+}
+
+static bool zoneActiveAt(uint8_t index) {
+    const ZoneConfig* z = zoneConfigAt(index);
+    return z ? z->active : true;
+}
+
+static uint8_t relayGpioForIndex(uint8_t index) {
+    static const uint8_t gpios[] = {V1_IN1, V1_IN2, V2_IN1, V2_IN2, V3_IN1, V3_IN2, V4_IN1, V4_IN2};
+    return index < sizeof(gpios) ? gpios[index] : 0;
+}
+
 static String fitTextWidth(const String& text, int16_t maxWidth) {
     if (!tft || tft->textWidth(text) <= maxWidth) return text;
 
@@ -330,6 +352,12 @@ static String currentSkipReason(const ZoneConfig& z) {
     return "Plan: wird laufen";
 }
 
+static String currentSkipReason(uint8_t index) {
+    const ZoneConfig* z = zoneConfigAt(index);
+    if (!z) return "Manuell bereit";
+    return currentSkipReason(*z);
+}
+
 static void drawWifiIcon(int16_t x, int16_t y, bool ok) {
     uint16_t col = ok ? COL_ACCENT : COL_RED;
     tft->fillCircle(x + 5, y + 10, 1, col);
@@ -404,22 +432,22 @@ static void drawDashboard() {
     // Header
     drawDashboardHeader();
 
-    // 4 Zonen
-    for (uint8_t zi = 0; zi < 4 && zi < cfg::zoneCount; zi++) {
-        const ZoneConfig& z = cfg::zones[zi];
-        const ecowitt::SoilData* sd = soilForChannel(z.wh52_channel);
-        bool   open = valve::isOpen(z.id);
-        const int16_t rowY = 32 + zi * 64;
-        const int16_t rowH = 64;
+    uint8_t visibleZones = displayZoneCount();
+    for (uint8_t zi = 0; zi < visibleZones; zi++) {
+        const ecowitt::SoilData* sd = soilForChannel(zoneSensorChannel(zi));
+        bool   open = valve::isOpen(zoneIdAt(zi));
+        const int16_t rowY = 32 + zi * 43;
+        const int16_t rowH = 43;
         String zName = zoneLabel(zi);
+        bool active = zoneActiveAt(zi);
 
         // Zone-Name + Status
-        const char* badge = open ? "OFFEN" : (z.active ? "bereit" : "inaktiv");
-        uint16_t bc = open ? COL_ACCENT : (z.active ? COL_TEXT2 : COL_RED);
+        const char* badge = open ? "OFFEN" : (active ? "bereit" : "inaktiv");
+        uint16_t bc = open ? COL_ACCENT : (active ? COL_TEXT2 : COL_RED);
         if (_smoothFonts) {
             tft->loadFont("InterSemi12", SPIFFS);
             tft->setTextDatum(TL_DATUM);
-            tft->setTextColor(open ? COL_ACCENT : (z.active ? COL_TEXT : COL_TEXT2), COL_BG, true);
+            tft->setTextColor(open ? COL_ACCENT : (active ? COL_TEXT : COL_TEXT2), COL_BG, true);
             tft->drawString(zName, 10, rowY + 5);
             tft->setTextDatum(TR_DATUM);
             tft->setTextColor(bc, COL_BG, true);
@@ -427,7 +455,7 @@ static void drawDashboard() {
             tft->unloadFont();
             tft->setTextDatum(TL_DATUM);
         } else {
-            tft->setTextColor(open ? COL_ACCENT : (z.active ? COL_TEXT : COL_TEXT2), COL_BG);
+            tft->setTextColor(open ? COL_ACCENT : (active ? COL_TEXT : COL_TEXT2), COL_BG);
             tft->setTextSize(1);
             tft->setCursor(10, rowY + 4);
             tft->print(zName);
@@ -453,29 +481,29 @@ static void drawDashboard() {
             sensorLine = "-- Kein Sensor --";
         }
 
-        String scheduleLine = nextScheduleLine(z.id);
-        String skipLine = currentSkipReason(z);
+        String scheduleLine = nextScheduleLine(zoneIdAt(zi));
+        String skipLine = currentSkipReason(zi);
         bool willRun = skipLine.startsWith("Plan");
 
         if (_smoothFonts) {
             tft->loadFont("InterReg11", SPIFFS);
             tft->setTextDatum(TL_DATUM);
             tft->setTextColor(COL_MUTED, COL_BG, true);
-            tft->drawString(sensorLine, 10, rowY + 23);
+            tft->drawString(fitTextWidth(sensorLine, 95), 10, rowY + 21);
             tft->setTextColor(willRun ? COL_ACCENT : COL_TEXT, COL_BG, true);
-            tft->drawString(scheduleLine, 10, rowY + 37);
+            tft->drawString(fitTextWidth(scheduleLine, 112), 118, rowY + 21);
             tft->setTextColor(skipLine.startsWith("Skip") ? COL_AMBER : COL_MUTED, COL_BG, true);
-            tft->drawString(fitTextWidth(skipLine, 155), 10, rowY + 50);
+            tft->drawString(fitTextWidth(skipLine, 220), 10, rowY + 32);
             tft->unloadFont();
         } else {
             tft->setTextColor(COL_MUTED, COL_BG);
-            tft->setCursor(10, rowY + 21);
+            tft->setCursor(10, rowY + 18);
             tft->print(sensorLine);
             tft->setTextColor(willRun ? COL_ACCENT : COL_TEXT, COL_BG);
-            tft->setCursor(10, rowY + 35);
+            tft->setCursor(118, rowY + 18);
             tft->print(scheduleLine);
             tft->setTextColor(skipLine.startsWith("Skip") ? COL_AMBER : COL_MUTED, COL_BG);
-            tft->setCursor(10, rowY + 48);
+            tft->setCursor(10, rowY + 30);
             tft->print(skipLine);
         }
 
@@ -485,149 +513,106 @@ static void drawDashboard() {
     drawNavBar();
 }
 
-// ── Screen 1: Sensorhistorie ──────────────────────────────
-static void drawDateLabel(uint32_t epoch, int16_t x, int16_t y) {
-    char buf[6] = "--/--";
-    if (epoch > 1700000000UL) {
-        time_t tt = (time_t)epoch;
-        struct tm tmv;
-        localtime_r(&tt, &tmv);
-        strftime(buf, sizeof(buf), "%d/%m", &tmv);
-    }
-    if (_smoothFonts) {
-        tft->drawString(buf, x, y);
+// ── Screen 1: Sensor-Livewerte ────────────────────────────
+static String sensorValueLine(const ecowitt::SoilData* sd) {
+    if (!sd || !sd->valid) return "-- Kein Sensor --";
+    char buf[40];
+    if (!isnan(sd->temp) && !isnan(sd->ec)) {
+        snprintf(buf, sizeof(buf), "%.0f%%  %.1fC  %.0fuS", sd->moisture, sd->temp, sd->ec);
+    } else if (!isnan(sd->temp)) {
+        snprintf(buf, sizeof(buf), "%.0f%%  %.1fC", sd->moisture, sd->temp);
     } else {
-        tft->setTextColor(COL_MUTED, COL_BG);
-        tft->setCursor(x, y);
-        tft->print(buf);
+        snprintf(buf, sizeof(buf), "%.0f%%", sd->moisture);
     }
+    return String(buf);
 }
 
-static void drawHistoryChart(const char* title, int16_t yTop, bool isMoisture,
-                             float vMin, float vMax) {
-    const uint16_t cols[4] = {COL_ACCENT, 0xF81F, COL_AMBER, COL_RED};
-    const int16_t x0 = 8;
-    const int16_t y0 = yTop + 13;
-    const int16_t w = 194;
-    const int16_t h = 70;
-    const int16_t axisX = x0 + w;
-    uint32_t nowTs = (uint32_t)time(nullptr);
-    uint32_t fromTs = (nowTs > HIST_DAYS * 86400UL) ? nowTs - HIST_DAYS * 86400UL : 0;
-
-    if (_smoothFonts) {
-        tft->loadFont("InterSemi12", SPIFFS);
-        tft->setTextDatum(TL_DATUM);
-        tft->setTextColor(COL_TEXT, COL_BG, true);
-        tft->drawString(title, x0, yTop);
-        tft->unloadFont();
-    } else {
-        tft->setTextColor(COL_TEXT, COL_BG);
-        tft->setCursor(x0, yTop);
-        tft->print(title);
-    }
-
-    tft->drawFastHLine(x0, y0 + h, w + 1, COL_TEXT2);
-    tft->drawFastVLine(axisX, y0, h + 1, COL_TEXT2);
-    for (uint8_t i = 0; i < 3; i++) {
-        int16_t gy = y0 + (int16_t)((uint32_t)i * h / 2);
-        tft->drawFastHLine(x0, gy, w, COL_BORDER);
-    }
-
-    char label[8];
-    if (_smoothFonts) {
-        tft->loadFont("InterReg11", SPIFFS);
-        tft->setTextDatum(TL_DATUM);
-        tft->setTextColor(COL_MUTED, COL_BG, true);
-    } else {
-        tft->setTextColor(COL_MUTED, COL_BG);
-    }
-    snprintf(label, sizeof(label), "%.0f", vMax);
-    if (_smoothFonts) tft->drawString(label, axisX + 5, y0 - 5);
-    else { tft->setCursor(axisX + 5, y0 - 3); tft->print(label); }
-    snprintf(label, sizeof(label), "%.0f", (vMin + vMax) * 0.5f);
-    if (_smoothFonts) tft->drawString(label, axisX + 5, y0 + h / 2 - 6);
-    else { tft->setCursor(axisX + 5, y0 + h / 2 - 4); tft->print(label); }
-    snprintf(label, sizeof(label), "%.0f", vMin);
-    if (_smoothFonts) tft->drawString(label, axisX + 5, y0 + h - 9);
-    else { tft->setCursor(axisX + 5, y0 + h - 7); tft->print(label); }
-
-    if (nowTs > 1700000000UL) {
-        drawDateLabel(fromTs, x0, y0 + h + 5);
-        drawDateLabel(fromTs + HIST_DAYS * 43200UL, x0 + w / 2 - 12, y0 + h + 5);
-        drawDateLabel(nowTs, x0 + w - 26, y0 + h + 5);
-    }
-    if (_smoothFonts) {
-        tft->unloadFont();
-        tft->setTextDatum(TL_DATUM);
-    }
-
-    for (uint8_t z = 0; z < 4 && z < cfg::zoneCount; z++) {
-        uint8_t channel = cfg::zones[z].wh52_channel;
-        if (channel < 1 || channel > ECOWITT_MAX_SOIL_CHANNELS) continue;
-        uint8_t soilIndex = channel - 1;
-        if (!_hist[soilIndex]) continue;
-
-        int16_t px = -1, py = -1, lastX = -1, lastY = -1;
-        for (int i = 0; i < _histCount; i++) {
-            int idx = (_histHead - _histCount + i + HIST_LEN) % HIST_LEN;
-            const SensorPt& pt = _hist[soilIndex][idx];
-            if (pt.ts == 0 || pt.ts < fromTs || pt.ts > nowTs) continue;
-            float v = isMoisture ? pt.m : pt.t;
-            if (isnan(v)) { px = -1; continue; }
-            if (v < vMin) v = vMin;
-            if (v > vMax) v = vMax;
-
-            int16_t x = x0 + (int16_t)((uint64_t)(pt.ts - fromTs) * (w - 1) / max<uint32_t>(1, nowTs - fromTs));
-            int16_t y = y0 + h - (int16_t)((v - vMin) * h / (vMax - vMin));
-            if (px >= 0) tft->drawLine(px, py, x, y, cols[z]);
-            lastX = x; lastY = y;
-            px = x; py = y;
-        }
-        if (lastX >= 0) tft->fillCircle(lastX, lastY, 2, cols[z]);
-    }
+static String sensorAgeLine(const ecowitt::SoilData* sd) {
+    if (!sd || !sd->valid || sd->ts == 0) return "keine frischen Daten";
+    unsigned long ageSec = (millis() - sd->ts) / 1000UL;
+    char buf[28];
+    if (ageSec < 60) snprintf(buf, sizeof(buf), "vor %us", (unsigned)ageSec);
+    else             snprintf(buf, sizeof(buf), "vor %umin", (unsigned)(ageSec / 60));
+    return String(buf);
 }
 
-static void drawHistory() {
+static void drawSensors() {
     tft->fillScreen(COL_BG);
     tft->setTextSize(1);
-
-    const uint16_t cols[4] = {COL_ACCENT, 0xF81F, COL_AMBER, COL_RED};
 
     if (_smoothFonts) {
         tft->loadFont("InterSemi12", SPIFFS);
         tft->setTextDatum(TL_DATUM);
         tft->setTextColor(COL_ACCENT, COL_BG, true);
-        tft->drawString("SENSOREN", 8, 5);
+        tft->drawString("SENSOR LIVE", 8, 5);
         tft->unloadFont();
     } else {
         tft->setTextColor(COL_ACCENT, COL_BG);
         tft->setTextSize(1);
         tft->setCursor(8, 5);
-        tft->print("SENSOREN");
+        tft->print("SENSOR LIVE");
     }
     drawHLine(21, COL_ACCENT);
     drawGearIcon(218, 9);
 
-    drawHistoryChart("Bodenfeuchte 30T (%)", 32, true, 0.0f, 100.0f);
-    drawHistoryChart("Bodentemperatur 30T (C)", 143, false, -10.0f, 40.0f);
+    uint8_t visibleZones = displayZoneCount();
+    for (uint8_t zi = 0; zi < visibleZones; zi++) {
+        uint8_t channel = zoneSensorChannel(zi);
+        const ecowitt::SoilData* sd = soilForChannel(channel);
+        const int16_t rowY = 32 + zi * 40;
+        String name = zoneLabel(zi, "Z");
+        String values = sensorValueLine(sd);
+        String age = sensorAgeLine(sd);
+        bool shared = false;
+        for (uint8_t other = 0; other < visibleZones; other++) {
+            if (other != zi && zoneSensorChannel(other) == channel) {
+                shared = true;
+                break;
+            }
+        }
 
-    for (uint8_t c = 0; c < 4 && c < cfg::zoneCount; c++) {
-        int16_t x = (c % 2) ? 140 : 8;
-        int16_t y = 258 + (c / 2) * 14;
         if (_smoothFonts) {
+            tft->loadFont("InterSemi12", SPIFFS);
+            tft->setTextDatum(TL_DATUM);
+            tft->setTextColor(COL_TEXT, COL_BG, true);
+            tft->drawString(fitTextWidth(name, 122), 10, rowY);
+            tft->setTextDatum(TR_DATUM);
+            tft->setTextColor(shared ? COL_AMBER : COL_MUTED, COL_BG, true);
+            char chBuf[18];
+            snprintf(chBuf, sizeof(chBuf), shared ? "Ch %u geteilt" : "Ch %u", channel);
+            tft->drawString(chBuf, 230, rowY);
+            tft->unloadFont();
+
             tft->loadFont("InterReg11", SPIFFS);
-            tft->setTextDatum(ML_DATUM);
-            tft->fillRect(x, y + 2, 6, 6, cols[c]);
-            tft->setTextColor(cols[c], COL_BG, true);
-            tft->drawString(zoneLabel(c, "Z"), x + 10, y + 5);
+            tft->setTextDatum(TL_DATUM);
+            tft->setTextColor(sd && sd->valid ? COL_ACCENT : COL_AMBER, COL_BG, true);
+            tft->drawString(fitTextWidth(values, 140), 10, rowY + 16);
+            tft->setTextDatum(TR_DATUM);
+            tft->setTextColor(COL_MUTED, COL_BG, true);
+            tft->drawString(age, 230, rowY + 16);
             tft->unloadFont();
             tft->setTextDatum(TL_DATUM);
         } else {
-            tft->fillRect(x, y + 3, 6, 6, cols[c]);
-            tft->setTextColor(cols[c], COL_BG);
-            tft->setCursor(x + 10, y + 1);
-            tft->print(zoneLabel(c, "Z"));
+            tft->setTextColor(COL_TEXT, COL_BG);
+            tft->setCursor(10, rowY);
+            tft->print(name);
+            tft->setTextColor(shared ? COL_AMBER : COL_MUTED, COL_BG);
+            tft->setCursor(172, rowY);
+            tft->printf(shared ? "Ch %u get." : "Ch %u", channel);
+            tft->setTextColor(sd && sd->valid ? COL_ACCENT : COL_AMBER, COL_BG);
+            tft->setCursor(10, rowY + 15);
+            tft->print(values);
+            tft->setTextColor(COL_MUTED, COL_BG);
+            tft->setCursor(172, rowY + 15);
+            tft->print(age);
         }
+        drawHLine(rowY + 34, COL_BORDER);
+    }
+
+    if (visibleZones == 0) {
+        tft->setTextColor(COL_MUTED, COL_BG);
+        tft->setCursor(10, 56);
+        tft->print("Keine Zonen konfiguriert");
     }
 
     drawNavBar();
@@ -654,7 +639,7 @@ static void drawSystem() {
         "Diagnose",
         "Eventlog",
         "OTA Update",
-        "Ventil-Setup",
+        "Ausgaenge",
         "Touch-Kalibrierung"
     };
 
@@ -756,6 +741,7 @@ static const char* eventActionText(const char* action) {
     if (strcmp(action, "open") == 0) return "AUF";
     if (strcmp(action, "close") == 0) return "ZU";
     if (strcmp(action, "skip") == 0) return "SKIP";
+    if (strcmp(action, "reset") == 0) return "RESET";
     return action && action[0] ? action : "-";
 }
 
@@ -923,70 +909,61 @@ static void drawOtaPage() {
     drawNavBar();
 }
 
-static uint8_t dutyToPercent(uint8_t duty) {
-    return (uint8_t)roundf((float)duty * 100.0f / 255.0f);
-}
-
-static uint8_t percentToDuty(uint8_t pct) {
-    return (uint8_t)max<uint16_t>(1, min<uint16_t>(255, (uint16_t)roundf((float)pct * 255.0f / 100.0f)));
-}
-
-static void drawValveSetupRow(uint8_t row, const char* label, const String& value) {
-    const int16_t y = 42 + row * 43;
-    tft->drawRect(8, y, 224, 34, COL_BORDER);
-    tft->drawRect(160, y + 5, 26, 24, COL_BORDER);
-    tft->drawRect(198, y + 5, 26, 24, COL_BORDER);
-
-    if (_smoothFonts) {
-        tft->loadFont("InterReg11", SPIFFS);
-        tft->setTextDatum(ML_DATUM);
-        tft->setTextColor(COL_MUTED, COL_BG, true);
-        tft->drawString(label, 16, y + 17);
-        tft->setTextDatum(MR_DATUM);
-        tft->setTextColor(COL_TEXT, COL_BG, true);
-        tft->drawString(value, 150, y + 17);
-        tft->setTextDatum(MC_DATUM);
-        tft->setTextColor(COL_ACCENT, COL_BG, true);
-        tft->drawString("-", 173, y + 18);
-        tft->drawString("+", 211, y + 18);
-        tft->unloadFont();
-        tft->setTextDatum(TL_DATUM);
-    } else {
-        tft->setTextColor(COL_MUTED, COL_BG);
-        tft->setCursor(16, y + 13);
-        tft->print(label);
-        tft->setTextColor(COL_TEXT, COL_BG);
-        tft->setCursor(92, y + 13);
-        tft->print(value);
-        tft->setTextColor(COL_ACCENT, COL_BG);
-        tft->setCursor(170, y + 13);
-        tft->print("-");
-        tft->setCursor(208, y + 13);
-        tft->print("+");
-    }
-}
-
-static void drawValveSetup() {
+static void drawOutputsPage() {
     tft->fillScreen(COL_BG);
     if (_smoothFonts) {
         tft->loadFont("InterSemi12", SPIFFS);
         tft->setTextDatum(TL_DATUM);
         tft->setTextColor(COL_ACCENT, COL_BG, true);
-        tft->drawString("VENTIL-SETUP", 8, 5);
+        tft->drawString("AUSGAENGE", 8, 5);
         tft->unloadFont();
     } else {
         tft->setTextColor(COL_ACCENT, COL_BG);
         tft->setCursor(8, 5);
-        tft->print("VENTIL-SETUP");
+        tft->print("AUSGAENGE");
     }
     drawHLine(21, COL_ACCENT);
     drawBackIcon(218, 12);
 
-    valve::Settings s = valve::settings();
-    drawValveSetupRow(0, "Open", String(s.openPulseMs) + " ms");
-    drawValveSetupRow(1, "Close", String(s.closePulseMs) + " ms");
-    drawValveSetupRow(2, "Duty", String(dutyToPercent(s.closeDuty)) + " %");
-    drawValveSetupRow(3, "Pause", String(s.seqPauseMs) + " ms");
+    if (_smoothFonts) {
+        tft->loadFont("InterReg11", SPIFFS);
+        tft->setTextDatum(TL_DATUM);
+    }
+
+    for (uint8_t i = 0; i < displayZoneCount(); i++) {
+        int16_t y = 36 + i * 28;
+        uint8_t zone = zoneIdAt(i);
+        bool open = valve::isOpen(zone);
+        uint16_t col = open ? COL_ACCENT : COL_MUTED;
+        tft->drawRect(8, y, 224, 22, open ? COL_ACCENT : COL_BORDER);
+        tft->fillCircle(20, y + 11, 4, col);
+
+        char left[34];
+        snprintf(left, sizeof(left), "IN%u  GPIO%u", i + 1, relayGpioForIndex(i));
+        String right = zoneLabel(i, "Z");
+        right += open ? "  EIN" : "  AUS";
+
+        if (_smoothFonts) {
+            tft->setTextColor(COL_MUTED, COL_BG, true);
+            tft->drawString(left, 32, y + 6);
+            tft->setTextDatum(TR_DATUM);
+            tft->setTextColor(open ? COL_ACCENT : COL_TEXT, COL_BG, true);
+            tft->drawString(fitTextWidth(right, 108), 224, y + 6);
+            tft->setTextDatum(TL_DATUM);
+        } else {
+            tft->setTextColor(COL_MUTED, COL_BG);
+            tft->setCursor(32, y + 7);
+            tft->print(left);
+            tft->setTextColor(open ? COL_ACCENT : COL_TEXT, COL_BG);
+            tft->setCursor(126, y + 7);
+            tft->print(fitTextWidth(right, 100));
+        }
+    }
+
+    if (_smoothFonts) {
+        tft->unloadFont();
+        tft->setTextDatum(TL_DATUM);
+    }
 
     const int16_t resetX = 20;
     const int16_t resetY = 228;
@@ -997,13 +974,13 @@ static void drawValveSetup() {
         tft->loadFont("InterSemi12", SPIFFS);
         tft->setTextDatum(MC_DATUM);
         tft->setTextColor(COL_AMBER, COL_BG, true);
-        tft->drawString("DEFAULTS", resetX + resetW / 2, resetY + resetH / 2 + 1);
+        tft->drawString("ALLE AUS", resetX + resetW / 2, resetY + resetH / 2 + 1);
         tft->unloadFont();
         tft->setTextDatum(TL_DATUM);
     } else {
         tft->setTextColor(COL_AMBER, COL_BG);
-        tft->setCursor(resetX + 72, resetY + 13);
-        tft->print("DEFAULTS");
+        tft->setCursor(resetX + 76, resetY + 13);
+        tft->print("ALLE AUS");
     }
 
     drawNavBar();
@@ -1117,14 +1094,17 @@ static void drawManual() {
     drawHLine(21, COL_ACCENT);
     drawGearIcon(218, 9);
 
-    // 4 Ventil-Buttons (2×2)
-    for (uint8_t i = 0; i < 4 && i < cfg::zoneCount; i++) {
+    uint8_t visibleZones = displayZoneCount();
+
+    // Ventil-Buttons (2x3)
+    for (uint8_t i = 0; i < visibleZones; i++) {
         int16_t x = (i % 2) * 122 + 4;
-        int16_t y = (i / 2) * 90 + 22;
-        bool open = valve::isOpen(i + 1);
+        int16_t y = (i / 2) * 57 + 22;
+        uint8_t zoneId = zoneIdAt(i);
+        bool open = valve::isOpen(zoneId);
         uint16_t bc = open ? COL_ACCENT : COL_BORDER;
-        tft->drawRect(x, y, 112, 82, bc);
-        if (open) tft->drawRect(x + 1, y + 1, 110, 80, bc);
+        tft->drawRect(x, y, 112, 51, bc);
+        if (open) tft->drawRect(x + 1, y + 1, 110, 49, bc);
         char valveBuf[4];
         snprintf(valveBuf, sizeof(valveBuf), "V%u", i + 1);
 
@@ -1132,7 +1112,7 @@ static void drawManual() {
             tft->loadFont("InterSemi12", SPIFFS);
             tft->setTextDatum(TL_DATUM);
             tft->setTextColor(open ? COL_ACCENT : COL_TEXT, COL_BG, true);
-            tft->drawString(fitTextWidth(zoneLabel(i), 100), x + 6, y + 8);
+            tft->drawString(fitTextWidth(zoneLabel(i), 100), x + 6, y + 6);
             tft->unloadFont();
         } else {
             tft->setTextColor(open ? COL_ACCENT : COL_TEXT, COL_BG);
@@ -1140,7 +1120,7 @@ static void drawManual() {
             tft->print(zoneLabel(i));
         }
 
-        const ecowitt::SoilData* sd = soilForChannel(cfg::zones[i].wh52_channel);
+        const ecowitt::SoilData* sd = soilForChannel(zoneSensorChannel(i));
         char moistureBuf[12] = "--";
         if (sd && sd->valid) {
             snprintf(moistureBuf, sizeof(moistureBuf), "%.0f%%", sd->moisture);
@@ -1149,28 +1129,28 @@ static void drawManual() {
             tft->loadFont("InterReg11", SPIFFS);
             tft->setTextDatum(TL_DATUM);
             tft->setTextColor(COL_MUTED, COL_BG, true);
-            tft->drawString(moistureBuf, x + 6, y + 30);
+            tft->drawString(moistureBuf, x + 6, y + 23);
 
             uint16_t sc = open ? COL_ACCENT : COL_MUTED;
             tft->setTextColor(sc, COL_BG, true);
-            if (open) tft->fillCircle(x + 10, y + 56, 3, sc);
-            else      tft->drawCircle(x + 10, y + 56, 3, sc);
-            tft->drawString(open ? "OFFEN" : "AUS", x + 18, y + 50);
+            if (open) tft->fillCircle(x + 10, y + 40, 3, sc);
+            else      tft->drawCircle(x + 10, y + 40, 3, sc);
+            tft->drawString(open ? "OFFEN" : "AUS", x + 18, y + 34);
 
             tft->setTextDatum(BR_DATUM);
             tft->setTextColor(open ? COL_ACCENT : COL_MUTED, COL_BG, true);
-            tft->drawString(valveBuf, x + 106, y + 76);
+            tft->drawString(valveBuf, x + 106, y + 45);
             tft->unloadFont();
             tft->setTextDatum(TL_DATUM);
         } else {
             tft->setTextColor(COL_MUTED, COL_BG);
-            tft->setCursor(x + 6, y + 28);
+            tft->setCursor(x + 6, y + 22);
             tft->print(moistureBuf);
 
             tft->setTextColor(open ? COL_ACCENT : COL_MUTED, COL_BG);
-            tft->setCursor(x + 6, y + 48);
+            tft->setCursor(x + 6, y + 36);
             tft->print(open ? "* OFFEN" : "o AUS");
-            tft->setCursor(x + 94, y + 66);
+            tft->setCursor(x + 94, y + 36);
             tft->print(valveBuf);
         }
     }
@@ -1181,36 +1161,36 @@ static void drawManual() {
         tft->loadFont("InterReg11", SPIFFS);
         tft->setTextDatum(TL_DATUM);
         tft->setTextColor(COL_MUTED, COL_BG, true);
-        tft->drawString("Dauer:", 8, 205);
+        tft->drawString("Dauer:", 8, 202);
         tft->unloadFont();
     } else {
         tft->setTextColor(COL_MUTED, COL_BG);
-        tft->setCursor(8, 207);
+        tft->setCursor(8, 203);
         tft->print("Dauer:");
     }
     for (uint8_t i = 0; i < 4; i++) {
         int16_t x = i * 56 + 8;
         bool sel = (durs[i] == _manDur);
-        tft->drawRect(x, 218, 50, 22, sel ? COL_ACCENT : COL_BORDER);
+        tft->drawRect(x, 214, 50, 22, sel ? COL_ACCENT : COL_BORDER);
         char durBuf[6];
         snprintf(durBuf, sizeof(durBuf), "%um", durs[i]);
         if (_smoothFonts) {
             tft->loadFont("InterReg11", SPIFFS);
             tft->setTextDatum(MC_DATUM);
             tft->setTextColor(sel ? COL_ACCENT : COL_MUTED, COL_BG, true);
-            tft->drawString(durBuf, x + 25, 229);
+            tft->drawString(durBuf, x + 25, 225);
             tft->unloadFont();
             tft->setTextDatum(TL_DATUM);
         } else {
             tft->setTextColor(sel ? COL_ACCENT : COL_MUTED, COL_BG);
-            tft->setCursor(x + 6, 224);
+            tft->setCursor(x + 6, 220);
             tft->print(durBuf);
         }
     }
 
     // STOP ALL Button
     const int16_t stopX = 4;
-    const int16_t stopY = 250;
+    const int16_t stopY = 246;
     const int16_t stopW = 232;
     const int16_t stopH = 30;
     tft->drawRect(stopX, stopY, stopW, stopH, COL_RED);
@@ -1233,12 +1213,12 @@ static void drawManual() {
 
 // ── Touch-Handler ─────────────────────────────────────────
 static void handleManualTouch(uint16_t tx, uint16_t ty) {
-    // Ventil-Buttons (2×2 Grid, y 22–204)
-    for (uint8_t i = 0; i < 4 && i < cfg::zoneCount; i++) {
+    // Ventil-Buttons (2x3 Grid)
+    for (uint8_t i = 0; i < displayZoneCount(); i++) {
         int16_t bx = (i % 2) * 122 + 4;
-        int16_t by = (i / 2) * 90 + 22;
-        if (tx >= bx && tx < bx + 112 && ty >= by && ty < by + 82) {
-            uint8_t zone = i + 1;
+        int16_t by = (i / 2) * 57 + 22;
+        if (tx >= bx && tx < bx + 112 && ty >= by && ty < by + 51) {
+            uint8_t zone = zoneIdAt(i);
             if (valve::isOpen(zone)) {
                 valve::close(zone);
                 scheduler::clearManualRun(zone);
@@ -1260,18 +1240,18 @@ static void handleManualTouch(uint16_t tx, uint16_t ty) {
     const uint8_t durs[] = {15, 30, 60, 90};
     for (uint8_t i = 0; i < 4; i++) {
         int16_t bx = i * 56 + 8;
-        if (tx >= bx && tx < bx + 50 && ty >= 218 && ty < 240) {
+        if (tx >= bx && tx < bx + 50 && ty >= 214 && ty < 236) {
             _manDur = durs[i];
             return;
         }
     }
 
     // STOP ALL
-    if (tx >= 4 && tx < 236 && ty >= 250 && ty < 280) {
-        tft->fillRect(4, 250, 232, 30, COL_RED);
+    if (tx >= 4 && tx < 236 && ty >= 246 && ty < 276) {
+        tft->fillRect(4, 246, 232, 30, COL_RED);
         tft->setTextColor(COL_BG, COL_RED);
         const char* stoppingLabel = "STOPPE ALLE...";
-        tft->setCursor(4 + (232 - (int16_t)strlen(stoppingLabel) * 6) / 2, 250 + (30 - 8) / 2);
+        tft->setCursor(4 + (232 - (int16_t)strlen(stoppingLabel) * 6) / 2, 246 + (30 - 8) / 2);
         tft->print(stoppingLabel);
         valve::closeAll();
         scheduler::clearManualRuns();
@@ -1291,12 +1271,6 @@ void display::init() {
     digitalWrite(TFT_CS, HIGH);
     pinMode(TOUCH_CS, OUTPUT);
     digitalWrite(TOUCH_CS, HIGH);
-
-    // PSRAM für Sensorhistorie
-    for (uint8_t i = 0; i < ECOWITT_MAX_SOIL_CHANNELS; i++) {
-        _hist[i] = (SensorPt*)ps_malloc(HIST_LEN * sizeof(SensorPt));
-        if (_hist[i]) memset(_hist[i], 0, HIST_LEN * sizeof(SensorPt));
-    }
 
     tft->init();
     tft->setRotation(DISPLAY_ROTATION);
@@ -1326,13 +1300,13 @@ void display::refresh() {
 
     switch (_screen) {
         case 0: drawDashboard(); break;
-        case 1: drawHistory();   break;
+        case 1: drawSensors();   break;
         case 2: drawManual();    break;
         case 3: drawSystem();    break;
         case 4: drawDiagnostics(); break;
         case 5: drawEventLog();  break;
         case 6: drawOtaPage();   break;
-        case 7: drawValveSetup(); break;
+        case 7: drawOutputsPage(); break;
         case 8: drawTouchCalibrationPage(); break;
     }
 }
@@ -1410,30 +1384,9 @@ void display::handleTouch() {
 
     if (_screen == 7) {
         if (tx >= 20 && tx < 220 && ty >= 228 && ty < 262) {
-            valve::resetSettings();
-            refresh();
-            return;
-        }
-        valve::Settings s = valve::settings();
-        for (uint8_t i = 0; i < 4; i++) {
-            int16_t rowY = 42 + i * 43;
-            if (ty < rowY + 5 || ty >= rowY + 29) continue;
-            int8_t delta = 0;
-            if (tx >= 160 && tx < 186) delta = -1;
-            else if (tx >= 198 && tx < 224) delta = 1;
-            if (delta == 0) continue;
-
-            if (i == 0) {
-                valve::setOpenPulseMs((uint16_t)max<int>(0, (int)s.openPulseMs + delta * 25));
-            } else if (i == 1) {
-                valve::setClosePulseMs((uint16_t)max<int>(0, (int)s.closePulseMs + delta));
-            } else if (i == 2) {
-                int pct = dutyToPercent(s.closeDuty) + delta * 5;
-                pct = min<int>(100, max<int>(1, pct));
-                valve::setCloseDuty(percentToDuty((uint8_t)pct));
-            } else if (i == 3) {
-                valve::setSeqPauseMs((uint16_t)max<int>(0, (int)s.seqPauseMs + delta * 250));
-            }
+            valve::closeAll();
+            scheduler::clearManualRuns();
+            events::log(0, "close", "manual", "Ausgaenge ALLE AUS", 0, NAN, NAN, NAN, NAN);
             refresh();
             return;
         }
@@ -1457,18 +1410,4 @@ void display::handleTouch() {
         handleManualTouch(tx, ty);
         refresh();
     }
-}
-
-void display::pushSensorHistory() {
-    uint32_t nowTs = (uint32_t)time(nullptr);
-    if (nowTs < 1700000000UL) nowTs = 0;
-    for (uint8_t i = 0; i < ECOWITT_MAX_SOIL_CHANNELS; i++) {
-        if (!_hist[i]) continue;
-        const ecowitt::SoilData& sd = ecowitt::soil[i];
-        _hist[i][_histHead] = {sd.valid ? sd.moisture : NAN,
-                                sd.valid ? sd.temp     : NAN,
-                                nowTs};
-    }
-    _histHead = (_histHead + 1) % HIST_LEN;
-    if (_histCount < HIST_LEN) _histCount++;
 }

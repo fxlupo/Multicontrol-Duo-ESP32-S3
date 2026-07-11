@@ -4,7 +4,7 @@ ESP32-S3 Firmware fuer die Multicontrol-Duo-Bewaesserungssteuerung.
 
 Aktuelle Firmware-Version: `2.2.9`
 
-Die Firmware steuert vier bistabile Ventile ueber DRV8871-Treiber, zeigt den Zustand auf einem 3.2" SPI-TFT an, synchronisiert Sensorwerte/Events/Kommandos mit dem Jninty-Bewaesserungsmodul und unterstuetzt OTA-Updates.
+Die Firmware steuert sechs Bewaesserungszonen ueber ein Relaisboard, zeigt den Zustand auf einem 3.2" SPI-TFT an, synchronisiert Sensorwerte/Events/Kommandos mit dem Jninty-Bewaesserungsmodul und unterstuetzt OTA-Updates.
 
 ## Setup
 
@@ -27,9 +27,9 @@ Danach in `include/config.h` mindestens setzen:
 
 ## Aktueller Funktionsumfang
 
-- TFT UI mit Dashboard, Sensorhistorie, manueller Ventilsteuerung, Systemseite, Diagnose, Eventlog, OTA, Ventilsetup und Touch-Kalibrierung.
+- TFT UI mit Dashboard, Sensorhistorie, manueller Ventilsteuerung, Systemseite, Diagnose, Eventlog, OTA, Ausgangsstatus und Touch-Kalibrierung.
 - Web Backend/Frontend fuer Dashboard, Zonen, Zeitprogramme, manuelle Befehle, Eventlog und Historie.
-- 4 Ventile ueber DRV8871 Treiber.
+- 6 Zonen ueber Relaisboard auf den bisherigen H-Bruecken-GPIOs GPIO4/5/6/7/15/16.
 - GW1200/Ecowitt Sensorwerte fuer Bodenfeuchte, Bodentemperatur und EC.
 - DS3231 RTC als robuste lokale Uhr.
 - ArduinoOTA fuer Firmware-Updates per WLAN.
@@ -117,6 +117,10 @@ Filter im Web-Frontend:
 
 Der Scheduler-Filter umfasst geplante Laeufe und sensorbedingte Scheduler-Skips.
 
+Boot-/Crash-Diagnosen werden als `reset`-Events geloggt. Im Detailfeld stehen
+Resetgrund, Boot-/Crash-Zaehler, letzte Uptime, Breadcrumb-Stage und Heap, z.B.
+`R task_wdt B279 C275 U186902 S http:config:send H257584`.
+
 ## WhatsApp Benachrichtigungen
 
 Die Firmware enthaelt eine deaktivierte Basis fuer WhatsApp-Benachrichtigungen ueber die Bibliothek `Callmebot ESP32`.
@@ -199,3 +203,19 @@ Falls OTA nicht erreichbar ist, bleibt USB als Fallback:
 ```
 
 Nach Aenderungen an `partitions.csv` immer per USB flashen.
+
+## Relais-Test per USB
+
+Fuer einen reinen Hardwaretest ohne Scheduler/WLAN/Touch gibt es ein separates
+PlatformIO-Environment:
+
+```bash
+/Users/franzwolf/.platformio/penv/bin/pio run -e esp32s3_relay_diag -t upload
+```
+
+Die Diagnose-Firmware schaltet IN1 bis IN6 nacheinander fuer kurze Zeit ein.
+Danach wieder die normale Firmware flashen:
+
+```bash
+/Users/franzwolf/.platformio/penv/bin/pio run -e esp32s3 -t upload
+```

@@ -35,9 +35,12 @@ struct ManualCommand {
 };
 
 namespace cfg {
-    extern ZoneConfig     zones[4];
+    constexpr uint8_t MAX_ZONES = 6;
+    constexpr uint8_t MAX_SCHEDULES = 12;
+
+    extern ZoneConfig     zones[MAX_ZONES];
     extern uint8_t        zoneCount;
-    extern Schedule       schedules[12];
+    extern Schedule       schedules[MAX_SCHEDULES];
     extern uint8_t        schedCount;
     extern ManualCommand  commands[5];
     extern uint8_t        cmdCount;

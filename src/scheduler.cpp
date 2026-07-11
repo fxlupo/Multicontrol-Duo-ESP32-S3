@@ -29,7 +29,7 @@ struct ManualRun {
     unsigned long startedAt;
     uint32_t durationMs;
 };
-static ManualRun _manualRuns[4] = {};
+static ManualRun _manualRuns[cfg::MAX_ZONES] = {};
 
 // Letzter Trigger pro Schedule (Schedule-ID → Minute-des-Tages + Wochentag)
 struct LastTrig { uint16_t id; int minOfDay; int wday; };
@@ -85,23 +85,30 @@ static WaterJob* enqueueJob(uint8_t zone, uint32_t durationSec) {
 }
 
 void scheduler::trackManualOpen(uint8_t zone, uint32_t durationMs) {
-    if (zone < 1 || zone > 4 || durationMs == 0) return;
+    if (zone < 1 || zone > cfg::MAX_ZONES || durationMs == 0) return;
     _manualRuns[zone - 1] = {true, millis(), durationMs};
 }
 
+static uint32_t manualElapsedSec(const ManualRun& run) {
+    if (!run.active || run.durationMs == 0) return 0;
+    uint32_t elapsedMs = millis() - run.startedAt;
+    if (elapsedMs > run.durationMs) elapsedMs = run.durationMs;
+    return max<uint32_t>(1, elapsedMs / 1000UL);
+}
+
 void scheduler::clearManualRun(uint8_t zone) {
-    if (zone < 1 || zone > 4) return;
+    if (zone < 1 || zone > cfg::MAX_ZONES) return;
     _manualRuns[zone - 1].active = false;
 }
 
 void scheduler::clearManualRuns() {
-    for (uint8_t i = 0; i < 4; i++) {
+    for (uint8_t i = 0; i < cfg::MAX_ZONES; i++) {
         _manualRuns[i].active = false;
     }
 }
 
 static void checkManualRunCompletions() {
-    for (uint8_t i = 0; i < 4; i++) {
+    for (uint8_t i = 0; i < cfg::MAX_ZONES; i++) {
         ManualRun& run = _manualRuns[i];
         if (!run.active) continue;
         uint8_t zone = i + 1;
@@ -112,6 +119,7 @@ static void checkManualRunCompletions() {
         run.active = false;
 
         if (expired) {
+            if (elapsedMs > run.durationMs) elapsedMs = run.durationMs;
             uint32_t elapsedSec = max<uint32_t>(1, elapsedMs / 1000UL);
             events::log(zone, "close", "manual", "Dauer abgelaufen",
                 elapsedSec, NAN, NAN, NAN, NAN);
@@ -137,8 +145,10 @@ static void handleManualCommands() {
                 if (!wasOpen) scheduler::trackManualOpen(mc.zone_id, durMs);
             }
         } else if (strcmp(mc.command, "close") == 0) {
-            uint32_t durSec = valve::isOpen(mc.zone_id)
-                ? (uint32_t)((millis() - 0) / 1000) : 0;  // Laufzeit nicht direkt verfügbar
+            uint32_t durSec = 0;
+            if (mc.zone_id >= 1 && mc.zone_id <= cfg::MAX_ZONES && valve::isOpen(mc.zone_id)) {
+                durSec = manualElapsedSec(_manualRuns[mc.zone_id - 1]);
+            }
             valve::close(mc.zone_id);
             scheduler::clearManualRun(mc.zone_id);
             events::log(mc.zone_id, "close", "manual", "close", durSec, NAN, NAN, NAN, NAN);

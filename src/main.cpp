@@ -19,12 +19,60 @@
 #define BACKEND_DEAD_MS 300000UL
 #endif
 
+#ifndef COMMAND_POLL_OPEN_MS
+#define COMMAND_POLL_OPEN_MS 5000UL
+#endif
+
 #ifndef CRASH_OPEN_LOCKOUT_MS
 #define CRASH_OPEN_LOCKOUT_MS 120000UL
 #endif
 
 #ifndef CRASH_CLOSE_EXTRA_PASSES
 #define CRASH_CLOSE_EXTRA_PASSES 2
+#endif
+
+#ifdef RELAY_DIAG_ONLY
+#ifndef RELAY_DIAG_ON_MS
+#define RELAY_DIAG_ON_MS 5000UL
+#endif
+
+#ifndef RELAY_DIAG_OFF_MS
+#define RELAY_DIAG_OFF_MS 2000UL
+#endif
+
+static void runRelayDiagnostic() {
+    Serial.begin(115200);
+    delay(500);
+    Serial.println();
+    Serial.println("=== RELAY DIAGNOSTIC ONLY ===");
+    Serial.println("Testet IN1-IN6 nacheinander. Es darf immer nur ein Relais an sein.");
+    Serial.printf("Haltezeit: EIN %lums, AUS %lums\n",
+                  (unsigned long)RELAY_DIAG_ON_MS,
+                  (unsigned long)RELAY_DIAG_OFF_MS);
+    Serial.println("Messung: COM und NO muessen waehrend EIN Durchgang haben.");
+    Serial.println("Abbruch/Normalbetrieb: normale esp32s3 Firmware erneut per USB flashen.");
+
+    valve::init();
+    delay(1000);
+
+    uint32_t cycle = 1;
+    while (true) {
+        Serial.printf("Zyklus %lu: alle Relais aus\n", (unsigned long)cycle++);
+        valve::closeAll();
+        delay(RELAY_DIAG_OFF_MS);
+
+        for (uint8_t zone = 1; zone <= RELAY_ZONE_COUNT; zone++) {
+            Serial.printf("Relais IN%u / Zone %u EIN: jetzt COM-NO messen\n", zone, zone);
+            bool ok = valve::open(zone, 0);
+            Serial.println(ok ? "OK" : "FEHLER");
+            delay(RELAY_DIAG_ON_MS);
+
+            Serial.printf("Relais IN%u / Zone %u AUS\n", zone, zone);
+            valve::close(zone);
+            delay(RELAY_DIAG_OFF_MS);
+        }
+    }
+}
 #endif
 
 static void notifyBootStatus(bool rtcAvailable, bool rtcTimeOk) {
@@ -575,6 +623,10 @@ static unsigned long tTouch      = 0;
 static unsigned long tWdt        = 0;
 
 void setup() {
+#ifdef RELAY_DIAG_ONLY
+    runRelayDiagnostic();
+#endif
+
 #ifdef TOUCH_DIAG_ONLY
     runTouchDiagnostic();
 #endif
@@ -634,7 +686,7 @@ void setup() {
     }
 
     stability::mark("setup:boot-event");
-    events::log(0, "skip", "system", stability::bootEventDetail(),
+    events::log(0, "reset", stability::resetReasonCode(), stability::bootEventDetail(),
                 stability::previousUptimeSec(), NAN, NAN, NAN, NAN);
     stability::mark("setup:events-flush");
     events::flush();
@@ -642,7 +694,6 @@ void setup() {
     // 7. Erster Ecowitt-Poll
     stability::mark("setup:ecowitt");
     ecowitt::poll();
-    display::pushSensorHistory();
 
     // 8. Display nach Netzwerk-/Sensordaten aktualisieren
     stability::mark("setup:refresh");
@@ -727,14 +778,14 @@ void loop() {
     if (now - tEcowitt >= INTERVAL_ECOWITT_MS) {
         stability::mark("loop:ecowitt");
         ecowitt::poll();
-        display::pushSensorHistory();
         stability::mark("loop:sensors-post");
         events::uploadSensors();
         tEcowitt = now;
     }
 
-    // Config-Sync (jede Minute)
-    if (now - tConfigSync >= INTERVAL_CONFIG_MS) {
+    // Config-Sync; bei offenem Ventil nur Commands/Stop kurz pollen.
+    unsigned long configInterval = valve::getOpenZone() > 0 ? COMMAND_POLL_OPEN_MS : INTERVAL_CONFIG_MS;
+    if (now - tConfigSync >= configInterval) {
         stability::mark("loop:config-sync");
         if (cfg::sync()) display::refresh();
         tConfigSync = now;

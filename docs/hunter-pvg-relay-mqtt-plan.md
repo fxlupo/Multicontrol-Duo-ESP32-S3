@@ -1,0 +1,562 @@
+# Hunter PVG / Relay / MQTT Umbauplan
+
+Stand: 2026-06-30
+
+## Aktueller Stand 2026-06-30
+
+- Das Board ist wieder produktiv online:
+  - IP: `192.168.10.116`
+  - OTA ist wieder moeglich.
+- Das Relaisboard ist an den acht Ausgaengen angeschlossen, die vorher die
+  H-Bruecken gesteuert haben.
+- Lokales Pinlayout:
+  - GPIO4 -> IN1 / Zone 1
+  - GPIO5 -> IN2 / Zone 2
+  - GPIO6 -> IN3 / Zone 3
+  - GPIO7 -> IN4 / Zone 4
+  - GPIO15 -> IN5 / Zone 5
+  - GPIO16 -> IN6 / Zone 6
+  - GPIO17/18 -> IN7-IN8 Reserve
+- `src/valve_driver.cpp` wurde auf Relais-Dauerbetrieb umgestellt und danach
+  auf 6 Zonen erweitert:
+  - Boot-Zustand: alle Relais aus.
+  - `open(zone)`: genau ein Relais an.
+  - `close(zone)`/`closeAll()`: Relais aus, ohne Pulse/PWM.
+  - Default: `RELAY_ACTIVE_LOW 1`, `RELAY_ZONE_COUNT 6`.
+- Relais-Diagnose:
+  - `esp32s3_relay_diag` schaltet IN1-IN6 nacheinander per USB-Testfirmware.
+- Build und USB-Upload auf `/dev/tty.wchusbserial58881023701` waren
+  erfolgreich.
+- Relais-Hardwaretest erfolgreich:
+  - Ausgangs-LEDs schalten.
+  - Relais ziehen nach korrekter `VCC` + `JD-VCC` 5V-Versorgung an.
+  - COM/NO hat bei aktivem Relais Durchgang.
+  - Normale 6-Zonen-Firmware wurde nach dem Test wieder per USB geflasht.
+- 24VAC-/Ventiltest erfolgreich:
+  - Hunter-24VAC-Ventile schalten ueber Relais.
+  - Manuelle Zone-1-6-Steuerung funktioniert.
+  - `ALLE STOP`/alle Relais aus bleibt der sichere Zielzustand.
+- GW1200 liefert aktuell Werte fuer 5 Bodenfeuchtesensoren. Fuer den ersten
+  Produktivschritt sollen WH52/GW1200 Channel 1-4 fest an Zone/Ventil 1-4
+  gekoppelt werden. Channel 5 steckt in der freien Flaeche und wird als
+  gemeinsamer Regen-/Feuchteindikator fuer Zone 5/6 genutzt.
+- Sensorchecks sind in der Firmware wieder aktiv:
+  - `SCHEDULER_IGNORE_SENSOR_CHECKS = 0`
+  - `SCHEDULER_MISSING_SENSOR_MODE = 1` bleibt als Fallback, falls ein
+    Sensorwert alt/fehlend ist.
+- Echtes GW1200-JSON wurde geprueft: Bodenwerte kommen unter `ch_ec`
+  (`channel`, `humidity`, `temp`, `ec`). Der Parser wurde darauf erweitert.
+- OTA-Update auf `192.168.10.116` war erfolgreich.
+- Produktivbeobachtung 2026-07-08:
+  - Ventile eingebaut; Scheduler und Sensor-Skips arbeiten plausibel.
+  - Beispiele: V1/V4 skippen bei feuchtem Boden, V2/V3 laufen per Scheduler.
+  - Bug gefunden: manuelle `close`-Events konnten wegen `millis() - 0`
+    Uptime statt Ventil-Laufzeit als Dauer melden (`1145x min`). Lokal
+    korrigiert; beim naechsten OTA mit ausrollen.
+
+## Naechste Session
+
+Direkt hier anknuepfen:
+
+1. Mit 24VAC/Ventilen testen:
+   - Erledigt: manueller Test Zone 1-6 mit 24VAC-Ventilen erfolgreich.
+2. Backend/Frontend auf 6 Zonen absichern:
+   - Erledigt im lokalen Clone `jninty-de`: Default-Zonen 1-6, Statusanzeige,
+     Dashboard, History-Legende und manuelle Steuerung verwenden sechs Zonen.
+   - Noch separat pruefen: Export/Import fuer Zone 5/6.
+3. Ecowitt-/Zeitsteuerung produktiv machen:
+   - Zone 1-4: WH52/GW1200 Channel 1-4 in History-Graphen und Scheduler-
+     Feuchteentscheidung nutzen.
+   - Zone 5/6: beide auf WH52/GW1200 Channel 5 mappen. Channel 5 liegt in der
+     freien Flaeche und ist kein zonescharfer Sensor, aber ein brauchbarer
+     Regen-/Feuchteindikator fuer beide Zusatzventile.
+   - Produktiv im Web-Backend kontrollieren: V5 und V6 muessen beide
+     `WH52 Ch 5` zeigen. Falls V6 noch `WH52 Ch 6` zeigt, im Dashboard bei
+     Zone 6 auf `Bearbeiten` gehen und `WH52 Ch` auf `5` setzen.
+4. OpenSprinkler-Referenz vor allem fuer Queue-/Status-/Sperrlogik nutzen,
+   nicht primaer fuer MQTT:
+   - Runtime-Queue mit `running`/`queued`/`idle` und Restzeit als eigener
+     Firmware-State statt aus Eventlog abgeleitet.
+   - Manuelle Queue-Optionen spaeter bewusst definieren:
+     `replace`, `append`, `front`, `reject_if_busy`.
+   - OpenSprinkler-App-Idee fuer spaeter vormerken: Run-Once/Testprogramm mit
+     Dauer pro Zone, z.B. "alle Zonen je 60s testen".
+   - Program Preview gehoert in die Web-App, nicht aufs ESP-TFT: naechste
+     7 Tage mit geplanten Laeufen, erwarteter Dauer und Sensor-Skip-Hinweisen.
+   - Eventlog/History in der App um Zeitraumfilter, Gruppierung nach Tag/Zone,
+     Summen und Export erweitern.
+   - Zone-spezifische Flags fuer Sensor-/Rain-Ignore und globale Sperren
+     einplanen.
+   - Master-/Pumpenrelais erst als spaetere Option pruefen.
+5. Vor Queue-/MQTT-Implementierung die OpenSprinkler-Referenznotizen
+   beruecksichtigen:
+   `docs/opensprinkler-reference-notes.md`.
+   Fuer die konkret geplanten App-Verbesserungen:
+   `docs/opensprinkler-app-implementation-plan.md`.
+6. MQTT bewusst nach unten priorisieren:
+   - zuerst Status/Events/Sensoren parallel,
+   - danach Commands,
+   - HTTP erst entfernen, wenn MQTT stabil laeuft.
+
+## Folgeplan ab 2026-07-11
+
+Der Relais-/6-Zonen-/Ecowitt-Produktivstand ist erreicht:
+
+- 6 Hunter-PVG-Zonen schalten ueber Relais.
+- V1-V4 nutzen WH52/GW1200 Channel 1-4.
+- V5/V6 nutzen gemeinsam WH52/GW1200 Channel 5.
+- Web-App `jninty-de` Version `1.9.6` ist online.
+- 7-Tage-History in der Web-App funktioniert mit echten Daten.
+- ESP/TFT zeigt keine lokale Sensor-History mehr, sondern nur Live-Werte.
+- Manuelle Event-Dauer ist per OTA gefixt und getestet.
+
+Naechste sinnvolle Schritte, falls wir weiter ausbauen:
+
+1. ESP/TFT Live-Sensorseite kurz vor Ort pruefen:
+   - Tab `Sensor` zeigt Live-Werte.
+   - V5/V6 zeigen `Ch 5 geteilt`.
+   - keine 30T-History/Charts mehr auf dem ESP.
+2. Program Preview in der Web-App planen:
+   - naechste 7 Tage aus Schedules + aktuellen Sensorwerten simulieren.
+   - anzeigen: Lauf wuerde starten / wuerde wegen Sensor skippen.
+   - nur als Plausibilitaetsvorschau, nicht als harte Zusage.
+3. Runtime-State/Queue sauber modellieren:
+   - `idle`/`running`/`queued`, Restzeit, Queue-Laenge.
+   - Restzeit nicht mehr aus Eventlog rekonstruieren.
+   - `close(zone)` entfernt laufende oder wartende Jobs.
+4. Danach Run-Once/Testprogramm:
+   - Dauer pro Zone.
+   - Quick-Test: alle aktiven Zonen je X Sekunden.
+   - erst nach sauberem Runtime-State/Queue produktiv machen.
+5. Globale Sperren/Rain Delay nur bei Bedarf:
+   - System aktiv/deaktiviert.
+   - Pause/Rain Delay mit Endzeit.
+   - Sensor-Ignore pro Zone nur bewusst und sichtbar.
+6. MQTT bleibt unten:
+   - erst wenn HTTP/Polling im Produktivbetrieb wirklich stoert.
+   - dann zunaechst Status/Events/Sensoren, spaeter Commands.
+
+Nicht mehr verfolgen:
+
+- Web-App Eventlog/History-Komfortausbau mit weiteren Filtern/Summen/Export.
+- Echte Langzeit-History auf dem ESP/TFT.
+- Nachtlauf-Beobachtung als eigener Todo-Punkt; das passiert im normalen
+  Produktivbetrieb.
+
+## Zielbild
+
+Die bistabilen Ventile und DRV8871-H-Bruecken werden entfernt. Die Anlage wird
+auf normale 24VAC-Bewaesserungsventile vom Typ Hunter PVG-101 mit 24VAC-
+Magnetspulen umgebaut.
+
+Der ESP32-S3 bleibt als lokale Steuerung mit TFT, Touch, RTC, Ecowitt/GW1200,
+Scheduler, Eventlog und OTA erhalten. Die Ventilansteuerung wird von
+H-Bruecken-Pulsen auf Relais-Dauerbetrieb umgestellt:
+
+- Ventil offen = Relais angezogen = 24VAC liegt an der Magnetspule.
+- Ventil geschlossen = Relais abgefallen = 24VAC ist getrennt.
+- Es bleibt bei der Logik: maximal ein Ventil gleichzeitig offen.
+- Das 8-Relais-Board wird zuerst fuer 6 Zonen genutzt; Relais 7-8 bleiben
+  Reserve.
+- ESP-Backend-Kommunikation wird von HTTP-Polling auf MQTT umgebaut.
+
+## Hardware-Umbau
+
+### Versorgung
+
+- 24VAC Trafo versorgt die Ventilseite.
+- 24VAC -> 5V Buck versorgt das Relaisboard auf der Relaisspulenseite.
+- Der ESP32-S3 bleibt mit stabilen 5V/VIN bzw. seiner bisherigen Versorgung
+  versorgt.
+- ESP-GND und Relais-Logik-GND muessen verbunden sein, wenn die Relais-Inputs
+  direkt vom ESP getrieben werden.
+- 24VAC-Seite bleibt galvanisch von ESP-GPIO getrennt und laeuft nur ueber die
+  Relaiskontakte.
+
+Hinweis zum typischen 8-Relaisboard mit `VCC`, `GND`, `JD-VCC`:
+
+- `JD-VCC` versorgt die Relaisspulen mit 5V.
+- `VCC` versorgt die Eingangs-/Optokopplerlogik.
+- Viele Boards sind active-low: `INx = LOW` schaltet Relais ein.
+- Vor finaler Firmware muss am konkreten Board getestet werden:
+  - active-low oder active-high
+  - ob 3.3V GPIO-Pegel sicher erkannt wird
+  - ob `JD-VCC`/`VCC` Jumper getrennt oder gesteckt bleiben soll
+
+### 24VAC-Verdrahtung
+
+Empfohlene Verdrahtung je Zone:
+
+- Eine 24VAC-Trafoleitung als gemeinsamer Common direkt zu allen Ventilspulen.
+- Die zweite 24VAC-Trafoleitung auf die COM-Klemme jedes genutzten Relais.
+- NO-Klemme des Relais zur jeweiligen Ventilspule.
+- NC bleibt unbenutzt.
+
+Damit ist ein Ventil stromlos geschlossen und nur bei angezogenem Relais offen.
+
+## Pinlayout
+
+Minimaler Verdrahtungsaufwand: Die bisherigen acht H-Bruecken-GPIOs werden
+direkt als acht Relais-Eingaenge weiterverwendet. Am ESP-Stecker koennen damit
+die vorhandenen Leitungen weiter genutzt werden; nur die Gegenseite wandert vom
+DRV8871-Board zum Relaisboard.
+
+Aktueller lokaler Pinstand aus `include/config.h`:
+
+| Funktion alt | GPIO | Funktion neu | Relaisboard |
+| --- | ---: | --- | --- |
+| V1_IN1 | GPIO4 | Zone 1 Relais | IN1 |
+| V1_IN2 | GPIO5 | Zone 2 Relais | IN2 |
+| V2_IN1 | GPIO6 | Zone 3 Relais | IN3 |
+| V2_IN2 | GPIO7 | Zone 4 Relais | IN4 |
+| V3_IN1 | GPIO15 | Zone 5 Relais | IN5 |
+| V3_IN2 | GPIO16 | Zone 6 Relais | IN6 |
+| V4_IN1 | GPIO17 | Reserve 7 | IN7 |
+| V4_IN2 | GPIO18 | Reserve 8 | IN8 |
+
+Damit muessen fuer die ersten sechs Zonen sechs GPIO-Leitungen aktiv genutzt
+werden. Die restlichen zwei Relais bleiben fuer spaetere Erweiterung oder
+Master-Valve/Pumpe frei.
+
+Nicht beruehren:
+
+| Funktion | GPIO |
+| --- | ---: |
+| RTC SDA | GPIO1 |
+| RTC SCL | GPIO2 |
+| Touch CS | GPIO8 |
+| TFT RST | GPIO21 |
+| TFT MOSI | GPIO38 |
+| TFT MISO | GPIO39 |
+| TFT SCLK | GPIO40 |
+| TFT CS | GPIO41 |
+| TFT DC | GPIO42 |
+| TFT Backlight | GPIO47 |
+
+### Alternative Pinbelegung bei 8 Zonen
+
+Falls direkt 8 Zonen genutzt werden sollen, kann dieselbe Tabelle 1:1 als
+Zone 1-8 verwendet werden:
+
+| Zone | GPIO | Relaisboard |
+| ---: | ---: | --- |
+| 1 | GPIO4 | IN1 |
+| 2 | GPIO5 | IN2 |
+| 3 | GPIO6 | IN3 |
+| 4 | GPIO7 | IN4 |
+| 5 | GPIO15 | IN5 |
+| 6 | GPIO16 | IN6 |
+| 7 | GPIO17 | IN7 |
+| 8 | GPIO18 | IN8 |
+
+Fuer den ersten Umbau bleibt die Firmware bei 6 Zonen plus 2 Reserve-Relais,
+damit Firmware und Backend nicht gleichzeitig auf 8 Zonen erweitert werden
+muessen.
+
+## Firmware-Umbau
+
+### Ventiltreiber
+
+`valve_driver` wird von bistabiler Pulstechnik auf monostabile Relaislogik
+umgebaut.
+
+Entfaellt:
+
+- Open-/Close-Pulsdauer
+- PWM-Close
+- Direct-Close-Test
+- RTC-Open-Mask fuer bistabile Ventile
+- `closeAll()`-Sonderlogik mit Pulsen
+- Ventilsetup-Seite fuer Open/Close/Duty/Pause
+
+Neu:
+
+- `RELAY_ACTIVE_LOW` Konfiguration.
+- `RELAY_ZONE_COUNT`, aktuell 6.
+- `RELAY_PINS[] = {4, 5, 6, 7, 15, 16}`.
+- Beim Boot alle Relais auf aus setzen.
+- `open(zone, maxDurationMs)`:
+  - prueft Zone und Lockout.
+  - blockiert, wenn bereits eine andere Zone offen ist.
+  - setzt genau ein Relais aktiv.
+  - merkt `openedAt` und `maxMs`.
+- `close(zone)`:
+  - setzt Relais aus.
+  - raeumt State.
+- `closeAll()`:
+  - setzt alle genutzten Relais aus.
+  - ist wieder idempotent und immer sicher.
+
+Wichtig: Relaisausgaenge muessen beim Boot sofort in den inaktiven Zustand
+gesetzt werden. Bei active-low Boards bedeutet das:
+
+```cpp
+digitalWrite(pin, HIGH);
+pinMode(pin, OUTPUT);
+```
+
+Danach erst bei Bedarf auf LOW ziehen.
+
+### Scheduler und UI
+
+Die bestehende Logik kann groesstenteils bleiben:
+
+- Maximal eine offene Zone bleibt erhalten.
+- Queue fuer gleichzeitige Programme bleibt erhalten.
+- Manuelle Steuerung bleibt erhalten.
+- `closeAll()` kann wieder als echte Not-Aus-Funktion funktionieren.
+- Restzeit sollte langfristig nicht aus Eventlog abgeleitet werden, sondern aus
+  ESP-Status/MQTT-State.
+
+Anzupassen:
+
+- Ventilsetup-Seite entfernen oder ersetzen durch Relaisdiagnose:
+  - Relais 1-8 anzeigen.
+  - Testbutton pro Relais optional nur fuer Wartungsmodus.
+- Texte von `Ventilsetup` auf `Relais-Test`/`Ausgaenge` umstellen.
+- Statuskarte weiterhin `V1 On | V2 Off ...`.
+
+## MQTT-Zielarchitektur
+
+MQTT ersetzt die zyklische HTTP-Command-/Statuskommunikation. HTTP kann fuer
+OTA, initiale Konfiguration oder Diagnose optional erhalten bleiben, sollte aber
+nicht mehr im zeitkritischen Loop blockieren.
+
+### Broker
+
+Empfehlung:
+
+- Mosquitto im bestehenden Docker-Setup neben Backend/Frontend.
+- Auth per User/Pass oder internem Token.
+- TLS optional spaeter; im Heimnetz zuerst robuste Funktion herstellen.
+
+### Topics
+
+Basis-Prefix:
+
+```text
+irrigation/<deviceId>/
+```
+
+Empfohlene Topics:
+
+| Richtung | Topic | Payload |
+| --- | --- | --- |
+| ESP -> Broker | `irrigation/esp32-01/status` | retained JSON |
+| ESP -> Broker | `irrigation/esp32-01/availability` | `online`/`offline`, retained/LWT |
+| ESP -> Broker | `irrigation/esp32-01/events` | Event JSON |
+| ESP -> Broker | `irrigation/esp32-01/sensors` | Sensor JSON |
+| Backend -> ESP | `irrigation/esp32-01/commands` | Command JSON |
+| Backend -> ESP | `irrigation/esp32-01/config` | retained Config JSON |
+| ESP -> Broker | `irrigation/esp32-01/commands/<id>/result` | Result JSON |
+
+Status-Payload:
+
+```json
+{
+  "firmwareVersion": "2.3.0",
+  "uptimeSec": 12345,
+  "wifiRssi": -63,
+  "freeHeap": 250000,
+  "valves": [
+    {"zone": 1, "open": true, "remainingSec": 812},
+    {"zone": 2, "open": false, "remainingSec": 0}
+  ],
+  "ecowittOk": true,
+  "backendOk": true,
+  "resetReason": "software"
+}
+```
+
+Command-Payload:
+
+```json
+{
+  "id": "cmd-uuid",
+  "command": "open",
+  "zoneNumber": 1,
+  "durationMin": 30
+}
+```
+
+Unterstuetzte Commands:
+
+- `open`
+- `close`
+- `close_all`
+- `reload_config`
+- optional spaeter `relay_test`
+
+Command-Result:
+
+```json
+{
+  "id": "cmd-uuid",
+  "ok": true,
+  "result": "opened",
+  "zoneNumber": 1,
+  "ts": "2026-06-17T12:00:00Z"
+}
+```
+
+### MQTT-Verhalten am ESP
+
+- Reconnect nicht blockierend.
+- Last Will:
+  - Topic: `irrigation/esp32-01/availability`
+  - Payload: `offline`
+  - retained: true
+- Nach Connect:
+  - `availability=online` retained publishen.
+  - Config retained abonnieren.
+  - Commands abonnieren.
+  - Status sofort publishen.
+- Status bei Aenderung sofort publishen, zusaetzlich Heartbeat alle 30-60s.
+- Commands sofort ack/result publishen.
+- Keine langen HTTP-Calls mehr waehrend Ventil offen ist.
+
+## Backend-Umbau
+
+Backend wird MQTT-Bridge:
+
+- Subscribed auf:
+  - `status`
+  - `events`
+  - `sensors`
+  - `commands/+/result`
+- Published:
+  - retained `config`
+  - `commands`
+
+Frontend spricht weiter mit Backend. Das Backend aktualisiert DB/Live-State aus
+MQTT. Dadurch muss der ESP keine HTTP-Polls fuer Commands mehr machen.
+
+## Migrationsplan
+
+### Phase 1: Hardware sicher umbauen
+
+- [x] H-Bruecken abklemmen.
+- [x] Relaisboard mit 5V versorgen; `VCC` und `JD-VCC` korrekt speisen.
+- [x] ESP-GND mit Relais-GND verbinden.
+- [x] GPIO4/5/6/7/15/16 auf IN1-IN6 legen.
+- [x] 24VAC Common zu allen Hunter-Spulen.
+- [x] 24VAC geschaltet ueber Relais COM -> NO -> jeweilige Spule.
+- [x] Relais-Active-Level mit Testfirmware und Multimeter pruefen.
+
+### Phase 2: Firmware Relais-Treiber
+
+- [x] `valve_driver` auf Relaislogik umbauen.
+- [x] Firmware auf 6 Zonen erweitern.
+- [x] Build/USB-Test ohne Ventile:
+  - Boot: alle Relais aus.
+  - IN1-IN6 schalten nacheinander.
+  - COM/NO schliesst bei aktivem Relais.
+- [x] Ventilsetup-Seite durch `Ausgaenge` ersetzt:
+  - zeigt IN1-IN6 mit GPIO und Zustand.
+  - bietet `ALLE AUS`.
+- [x] TFT-Dashboard und TFT-Manuell zeigen Zone 5/6 auch dann, wenn die
+  Backend-Config noch nur vier Zonen liefert.
+- [x] Web-Backend/Web-Frontend im lokalen `jninty-de`-Clone auf 6 Zonen
+  erweitert:
+  - Default-Zonen 1-6 werden angelegt; bestehende 4-Zonen-Installationen
+    bekommen Zone 5/6 nachgezogen.
+  - Dashboard, manuelle Steuerung, Statuskarte und History-Legende verwenden
+    sechs Zonen.
+- [x] Mit 24VAC/Ventilen testen.
+
+### Phase 2b: Sensoren und Zeitsteuerung produktiv absichern
+
+- [x] Backend-Zonen 1-4 auf WH52/GW1200 Channel 1-4 gesetzt und produktiv
+  geprueft.
+- [x] Backend-Zonen 5/6 auf denselben WH52/GW1200 Channel 5 gesetzt und
+  produktiv geprueft.
+- [x] Firmware-Sensorchecks wieder aktivieren
+  (`SCHEDULER_IGNORE_SENSOR_CHECKS = 0`).
+- [x] GW1200-Parser fuer echtes `ch_ec`-JSON erweitern.
+- [x] Firmware per OTA auf `192.168.10.116` flashen.
+- [x] Manuelle Close-Dauer lokal korrigieren; keine Uptime mehr als
+  Event-Dauer loggen.
+- [x] Fix fuer manuelle Close-Dauer per OTA auf `192.168.10.116` ausgerollt
+  (2026-07-11 09:52 CEST).
+- [x] Manuellen Kurzlauf nach OTA getestet: Zone oeffnen/stoppen ok,
+  Event-Dauer zeigt keine Uptime-/`1145x min`-Werte mehr.
+- [x] Frontend: History-Graphen fuer echte Sensor-Channels dynamisch anzeigen;
+  Channel 5 als gemeinsamer Indikator fuer Zone 5/6 kennzeichnen. Umsetzung in
+  `jninty-de` gepusht: `c92907f` / Version `1.9.6`.
+- [x] Frontend: History-Legende/Graph dynamisch aus echten Sensor-Channels
+  ableiten; keinen Phantom-Channel 6 anzeigen, wenn V6 auf Channel 5 liegt.
+- [x] Backend/Produktion: Version `1.9.6` ist online; 7-Tage-History liefert
+  echte Daten und zeigt keinen Channel 6.
+- [x] Backend/Produktion: V5 und V6 sind beide auf WH52/GW1200 Channel 5
+  gemappt.
+- [x] ESP/TFT: Sensor-History-Chart entfernt; der Sensor-Tab zeigt nur noch
+  Live-Werte. Langfristige Auswertung passiert in der App. Per OTA auf
+  `192.168.10.116` ausgerollt am 2026-07-11 10:18 CEST.
+- [ ] Web-App: Run-Once/Testprogramm vormerken (Dauer pro Zone, Quick-Test
+  fuer alle Zonen).
+- [ ] Web-App: Program Preview vormerken (naechste 7 Tage, geplante Laufzeiten,
+  Sensor-Skip-Hinweise).
+
+### Phase 3: OpenSprinkler-inspirierte Runtime-Logik
+
+1. Runtime-State fuer Zonen einfuehren:
+   - `idle`
+   - `running`
+   - `queued`
+   - `remainingSec`
+   - `queueLength`
+2. Queue robuster machen:
+   - pro Zone merken, ob sie bereits in der Queue ist.
+   - `close(zone)` entfernt laufende und wartende Jobs dieser Zone.
+   - `close_all` leert Queue und Runtime-State eindeutig.
+3. Manuelle Queue-Strategie bewusst festlegen:
+   - Default zunaechst `reject_if_busy` oder `replace`.
+   - `append`/`front` erst anbieten, wenn Statusanzeige sauber ist.
+4. Betriebsflags vorbereiten:
+   - Controller enabled/disabled.
+   - Rain delay / Pause.
+   - Sensor-/Rain-Ignore pro Zone.
+   - Optional Water-Level-Prozent fuer saisonale Laufzeit-Skalierung.
+
+### Phase 4: MQTT parallel einfuehren, spaeter
+
+1. Mosquitto lokal/deploymentseitig bereitstellen.
+2. ESP MQTT-Client einbauen.
+3. Status/Event/Sensor per MQTT publishen.
+4. Backend MQTT-Subscriber schreibt Live-State/Events.
+5. HTTP-Status parallel noch aktiv lassen, bis Live-State stabil ist.
+
+### Phase 5: Commands auf MQTT umstellen
+
+1. Backend published Commands auf MQTT.
+2. ESP subscribed Commands.
+3. ESP published Result.
+4. Frontend nutzt Backend weiter unveraendert.
+5. HTTP `GET /commands` deaktivieren.
+
+### Phase 6: HTTP reduzieren
+
+1. HTTP-Config-Sync durch retained MQTT-Config ersetzen.
+2. HTTP-Status/Sensors/Events abschalten oder nur als Fallback behalten.
+3. Stabilitaetsnotizen aktualisieren.
+
+## Offene Entscheidungen
+
+- Relaisboard active-low oder active-high?
+- 6 Zonen initial oder direkt 8 Zonen?
+- Master-Valve/Pumpenrelais benoetigt?
+- MQTT Broker im bestehenden Docker-Stack oder extern?
+- MQTT Auth: User/Pass, Token oder internes Netz?
+- TLS sofort oder erst spaeter?
+- WhatsApp-Benachrichtigungen weiter direkt vom ESP oder kuenftig nur Backend?
+
+## Empfehlung
+
+Erster stabiler Zielstand:
+
+- 6 Hunter PVG-101 an Relais 1-6.
+- Relais 7-8 Reserve.
+- GPIO4/5/6/7/15/16 fuer Zone 1-6.
+- Display, RTC, Ecowitt und lokale Schedulerlogik bleiben.
+- MQTT zuerst fuer Status/Events/Sensoren, danach Commands.
+- HTTP erst entfernen, wenn MQTT mehrere Tage stabil laeuft.
