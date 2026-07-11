@@ -426,8 +426,8 @@ Abnahmekriterien vor Code-Aenderungen:
 - [x] Publish/Subscribe mit `irrigation_backend` funktioniert fuer
   `irrigation/esp32-01/#`.
 - [x] `irrigation_esp` kann Status/Event/Sensor schreiben.
-- [ ] `irrigation_esp` kann retained Config lesen.
-- [ ] `irrigation_esp` kann Command-Result schreiben.
+- [x] `irrigation_esp` kann retained Config lesen.
+- [x] `irrigation_esp` kann Command-Result schreiben.
 - [x] `irrigation_esp` kann keine fremden Prefixe schreiben.
 - [x] Catfeeder-User koennen keine Bewaesserungs-Topics schreiben.
 - [ ] Retained Config kann gesetzt, gelesen und geloescht werden.
@@ -441,6 +441,13 @@ Testprotokoll 2026-07-11:
   abonnieren.
 - `irrigation_esp` kann verbinden und auf `irrigation/esp32-01/status`
   publishen.
+- `irrigation_backend` kann retained Config auf `irrigation/esp32-01/config`
+  schreiben; `irrigation_esp` liest diese retained Config erfolgreich:
+  `{"test":true,"retained":true,"source":"manual"}`.
+- `irrigation_esp` kann Command-Result auf
+  `irrigation/esp32-01/commands/test-manual-001/result` schreiben;
+  `irrigation_backend` empfaengt
+  `{"id":"test-manual-001","ok":true,"result":"manual-test","zoneNumber":0}`.
 - ACL-Trennung erfolgreich:
   - `irrigation_esp` schreibt nicht nach `catfeeder/#`.
   - Catfeeder-User schreiben nicht nach `irrigation/esp32-01/#`.
