@@ -731,7 +731,7 @@ Status: vorbereitet im Code, noch nicht produktiv aktiviert.
 
 ### Phase 5: Commands auf MQTT umstellen
 
-Status: umgesetzt und per MQTT-CLI getestet, HTTP bleibt Fallback.
+Status: produktiv getestet, HTTP bleibt Fallback.
 
 1. Backend published Commands auf MQTT:
    - umgesetzt in Web-App/Backend `1.9.12`.
@@ -772,6 +772,10 @@ Status: umgesetzt und per MQTT-CLI getestet, HTTP bleibt Fallback.
        und `valveStates: 000000`.
      - `close_all` auf `commands/codex-close-all-003` lieferte `acked` und
        `done`.
+   - Produktivtest mit Web-App `1.9.12`:
+     - Manueller Lauf V2 wurde per MQTT ausgefuehrt.
+     - Result-Topic lieferte `done`.
+     - Eventlog zeigt genau ein Oeffnen und ein Schliessen ohne Duplikate.
 
 ### Phase 6: HTTP reduzieren
 
