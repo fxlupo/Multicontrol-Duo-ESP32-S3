@@ -174,6 +174,10 @@ Akzeptanz:
 Mehrwert: Wartung und Tests werden deutlich einfacher als sechs einzelne
 manuelle Starts.
 
+Status: umgesetzt am 2026-07-11. Web-App `1.9.8` bietet Quick-Tests mit
+10/20/30 Sekunden fuer alle aktiven Zonen; Firmware `2.2.11` fuehrt
+`run_once` ueber die Runtime-Queue aus.
+
 Backend:
 
 - Neue Command-Art vorbereiten:
@@ -373,10 +377,9 @@ Akzeptanz:
 
 ## Empfohlene Reihenfolge ab jetzt
 
-1. P3 Run-Once/Testprogramm bauen, jetzt mit sauberem Runtime-State.
-2. P4 Program Preview als optionaler Web-App-Mehrwert.
-3. P6 Sperren/Rain Delay und P7 Import/Export nur bei konkretem Bedarf.
-4. P8 MQTT bleibt niedrig priorisiert.
+1. P4 Program Preview als optionaler Web-App-Mehrwert.
+2. P6 Sperren/Rain Delay und P7 Import/Export nur bei konkretem Bedarf.
+3. P8 MQTT bleibt niedrig priorisiert.
 
 ## Nicht jetzt
 

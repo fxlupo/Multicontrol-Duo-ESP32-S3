@@ -30,8 +30,8 @@ struct Schedule {
 struct ManualCommand {
     char     id[40];
     uint8_t  zone_id;
-    char     command[12];   // "open","close","close_all"
-    uint16_t duration_min;
+    char     command[12];   // "open","close","close_all","run_once"
+    uint16_t duration_min;  // minutes for open, seconds for run_once
 };
 
 namespace cfg {

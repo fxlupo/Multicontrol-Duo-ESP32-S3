@@ -111,22 +111,21 @@ Der Relais-/6-Zonen-/Ecowitt-Produktivstand ist erreicht:
 - Manuelle Event-Dauer ist per OTA gefixt und getestet.
 - ESP meldet Runtime-State/Queue mit `idle`/`running`/`queued`, Restzeit und
   Queue-Laenge; Web-App Version `1.9.7` zeigt diese Werte an.
+- Run-Once/Testprogramm ist umgesetzt: Web-App Version `1.9.8` kann
+  Testlaeufe fuer alle aktiven Zonen mit 10/20/30 Sekunden starten; Firmware
+  `2.2.11` legt diese Laeufe in die Runtime-Queue.
 
 Naechste sinnvolle Schritte, falls wir weiter ausbauen:
 
-1. Run-Once/Testprogramm bauen:
-   - Dauer pro Zone.
-   - Quick-Test: alle aktiven Zonen je X Sekunden.
-   - Queue-State fuer Anzeige/Stop nutzen.
-2. Program Preview in der Web-App optional planen:
+1. Program Preview in der Web-App optional planen:
    - naechste 7 Tage aus Schedules + aktuellen Sensorwerten simulieren.
    - anzeigen: Lauf wuerde starten / wuerde wegen Sensor skippen.
    - nur als Plausibilitaetsvorschau, nicht als harte Zusage.
-3. Globale Sperren/Rain Delay nur bei Bedarf:
+2. Globale Sperren/Rain Delay nur bei Bedarf:
    - System aktiv/deaktiviert.
    - Pause/Rain Delay mit Endzeit.
    - Sensor-Ignore pro Zone nur bewusst und sichtbar.
-4. MQTT bleibt unten:
+3. MQTT bleibt unten:
    - erst wenn HTTP/Polling im Produktivbetrieb wirklich stoert.
    - dann zunaechst Status/Events/Sensoren, spaeter Commands.
 
@@ -490,8 +489,10 @@ MQTT. Dadurch muss der ESP keine HTTP-Polls fuer Commands mehr machen.
   (`idle`/`running`/`queued`, `remainingSec`, `queueLength`). Firmware per OTA
   auf `192.168.10.116` ausgerollt am 2026-07-11 10:30 CEST; Web-App auf
   Version `1.9.7` vorbereitet.
-- [ ] Web-App: Run-Once/Testprogramm vormerken (Dauer pro Zone, Quick-Test
-  fuer alle Zonen).
+- [x] Web-App/Firmware: Run-Once/Testprogramm umgesetzt. Quick-Test startet
+  alle aktiven Zonen nacheinander mit 10/20/30 Sekunden ueber `run_once`.
+  Firmware per OTA auf `192.168.10.116` ausgerollt am 2026-07-11 10:48 CEST;
+  Web-App auf Version `1.9.8` vorbereitet.
 - [ ] Web-App: Program Preview vormerken (naechste 7 Tage, geplante Laufzeiten,
   Sensor-Skip-Hinweise).
 
@@ -517,6 +518,9 @@ MQTT. Dadurch muss der ESP keine HTTP-Polls fuer Commands mehr machen.
    - Rain delay / Pause.
    - Sensor-/Rain-Ignore pro Zone.
    - Optional Water-Level-Prozent fuer saisonale Laufzeit-Skalierung.
+5. Run-Once/Testprogramm:
+   - Status: erledigt mit Firmware `2.2.11` und Web-App `1.9.8`.
+   - Quick-Test nutzt `run_once` und die Runtime-Queue.
 
 ### Phase 4: MQTT parallel einfuehren, spaeter
 

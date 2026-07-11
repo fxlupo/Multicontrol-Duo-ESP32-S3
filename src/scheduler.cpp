@@ -209,6 +209,34 @@ static void handleManualCommands() {
             scheduler::clearManualRuns();
             scheduler::clearQueue();
             events::log(0, "close", "manual", "close_all", 0, NAN, NAN, NAN, NAN);
+        } else if (strcmp(mc.command, "run_once") == 0) {
+            if (valve::getOpenZone() != 0 || scheduler::queueLength() != 0) {
+                events::log(0, "skip", "manual", "run_once busy", 0, NAN, NAN, NAN, NAN);
+                continue;
+            }
+            uint16_t durationSec = min<uint16_t>(600, max<uint16_t>(1, mc.duration_min));
+            uint8_t queued = 0;
+            char det[64];
+            snprintf(det, sizeof(det), "Testlauf %u s", durationSec);
+            for (uint8_t zi = 0; zi < cfg::zoneCount; zi++) {
+                const ZoneConfig& z = cfg::zones[zi];
+                if (!z.active) continue;
+                WaterJob* job = enqueueJob(z.id, durationSec);
+                if (!job) {
+                    events::log(z.id, "skip", "manual", "run_once queue full", 0, NAN, NAN, NAN, NAN);
+                    continue;
+                }
+                strlcpy(job->reason, "manual", sizeof(job->reason));
+                strlcpy(job->detail, det, sizeof(job->detail));
+                queued++;
+            }
+            if (queued == 0) {
+                events::log(0, "skip", "manual", "run_once empty", 0, NAN, NAN, NAN, NAN);
+            }
+            if (_qLen > 0 && _currentJob < 0) {
+                _currentJob = 0;
+                _jobPauseUntil = 0;
+            }
         } else if (strcmp(mc.command, "open") == 0) {
             uint32_t durMs = (uint32_t)mc.duration_min * 60000UL;
             bool wasOpen = valve::isOpen(mc.zone_id);
