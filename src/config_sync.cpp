@@ -1,6 +1,7 @@
 #include "config_sync.h"
 #include "config.h"
 #include "backend_http.h"
+#include "mqtt_transport.h"
 #include "wifi_manager.h"
 #include "watchdog.h"
 #include "stability.h"
@@ -114,6 +115,19 @@ static bool postCommandState(const char* id, const char* state, bool ok, const c
     return code >= 200 && code < 300;
 }
 
+static void publishMqttCommandResult(const char* id, const char* status, bool ok, const char* resultText) {
+    if (!id || !id[0]) return;
+    JsonDocument doc;
+    doc["id"] = id;
+    doc["status"] = status ? status : "done";
+    doc["ok"] = ok;
+    doc["result"] = resultText ? resultText : "";
+    doc["source"] = "esp32";
+    String body;
+    serializeJson(doc, body);
+    mqtt::publishJson((String("commands/") + id + "/result").c_str(), body);
+}
+
 void cfg::loadFromNVS() {
     Preferences p;
     p.begin(NVS_NAMESPACE, true);
@@ -217,6 +231,41 @@ static void parseCommands(JsonArray arr) {
         strlcpy(mc.command, c["command"] | "close", sizeof(mc.command));
         mc.duration_min = c["durationMin"]  | c["duration_min"] | 10;
     }
+}
+
+static bool commandAlreadyQueued(const char* id) {
+    if (!id || !id[0]) return false;
+    for (uint8_t i = 0; i < cfg::cmdCount; i++) {
+        if (strncmp(cfg::commands[i].id, id, sizeof(cfg::commands[i].id)) == 0) return true;
+    }
+    return false;
+}
+
+void cfg::handleMqttCommand(const char* id, const String& payload) {
+    if (!id || !id[0]) return;
+    if (commandAlreadyQueued(id)) {
+        publishMqttCommandResult(id, "acked", true, "duplicate");
+        return;
+    }
+    if (cmdCount >= 5) {
+        publishMqttCommandResult(id, "failed", false, "queue_full");
+        return;
+    }
+
+    JsonDocument doc;
+    DeserializationError err = deserializeJson(doc, payload);
+    if (err) {
+        publishMqttCommandResult(id, "failed", false, "json_error");
+        return;
+    }
+
+    JsonObject c = doc.as<JsonObject>();
+    ManualCommand& mc = commands[cmdCount++];
+    strlcpy(mc.id, id, sizeof(mc.id));
+    mc.zone_id = c["zoneNumber"] | c["zone_number"] | zoneNumberFromZoneId(c["zoneId"] | c["zone_id"] | "");
+    strlcpy(mc.command, c["command"] | "close", sizeof(mc.command));
+    mc.duration_min = c["durationMin"] | c["duration_min"] | 10;
+    publishMqttCommandResult(id, "acked", true, "received");
 }
 
 static bool fetchCommands() {
@@ -324,6 +373,7 @@ void cfg::ackCommands() {
 
     for (uint8_t i = 0; i < cmdCount; i++) {
         postCommandState(commands[i].id, "done", true, "executed");
+        publishMqttCommandResult(commands[i].id, "done", true, "executed");
     }
     cmdCount = 0;
 }

@@ -731,11 +731,47 @@ Status: vorbereitet im Code, noch nicht produktiv aktiviert.
 
 ### Phase 5: Commands auf MQTT umstellen
 
-1. Backend published Commands auf MQTT.
-2. ESP subscribed Commands.
-3. ESP published Result.
+Status: umgesetzt und per MQTT-CLI getestet, HTTP bleibt Fallback.
+
+1. Backend published Commands auf MQTT:
+   - umgesetzt in Web-App/Backend `1.9.12`.
+   - MQTT-Service publiziert frische pending Commands auf
+     `irrigation/esp32-01/commands/<id>`.
+   - Pending Commands werden bis zum `acked`-Result periodisch wiederholt.
+2. ESP subscribed Commands:
+   - umgesetzt in Firmware `2.2.17`.
+   - ESP subscribed `irrigation/esp32-01/commands/+`.
+   - Empfangene Commands werden in die bestehende `cfg::commands` Queue gelegt.
+3. ESP published Result:
+   - ESP publiziert sofort `acked` auf
+     `irrigation/esp32-01/commands/<id>/result`, damit HTTP-Polling denselben
+     Command nicht zusaetzlich als pending abholt.
+   - Nach Ausfuehrung publiziert ESP `done` auf demselben Result-Topic.
 4. Frontend nutzt Backend weiter unveraendert.
-5. HTTP `GET /commands` deaktivieren.
+5. HTTP `GET /commands` bleibt vorerst als Fallback aktiv.
+6. Teststand 2026-07-11:
+   - Backend `1.9.12` deployen.
+   - Firmware `2.2.17` per OTA flashen.
+   - Vor dem Command-Test Mosquitto-ACL pruefen:
+     - `irrigation_backend` muss auf `irrigation/esp32-01/commands/#`
+       schreiben duerfen.
+     - `irrigation_esp` muss `irrigation/esp32-01/commands/#` lesen duerfen.
+     - `irrigation_esp` muss
+       `irrigation/esp32-01/commands/+/result` schreiben duerfen.
+   - Manuellen Kurzlauf aus der Web-App starten.
+   - MQTT pruefen: `commands/<id>`, danach `commands/<id>/result` mit
+     `acked` und `done`.
+   - Eventlog pruefen: keine Doppel-Events.
+   - ACL nachgezogen und getestet:
+     - `close_all` auf `commands/codex-close-all-002` wurde vom ESP empfangen.
+     - Result-Topic lieferte `acked` und `done`.
+   - Nachtest ergab einen WDT-Hinweis bei `mqtt:connect`; Firmware `2.2.17`
+     begrenzt den MQTT-Socket-Timeout auf 3 Sekunden.
+   - Firmware `2.2.17` ist OTA online:
+     - MQTT-Status meldet `firmwareVersion: 2.2.17`, `resetReason: software`
+       und `valveStates: 000000`.
+     - `close_all` auf `commands/codex-close-all-003` lieferte `acked` und
+       `done`.
 
 ### Phase 6: HTTP reduzieren
 

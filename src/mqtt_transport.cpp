@@ -38,11 +38,16 @@
 #define MQTT_RECONNECT_MS 10000UL
 #endif
 
+#ifndef MQTT_SOCKET_TIMEOUT_SEC
+#define MQTT_SOCKET_TIMEOUT_SEC 3
+#endif
+
 namespace {
     WiFiClient wifiClient;
     PubSubClient client(wifiClient);
     unsigned long lastReconnectMs = 0;
     bool initialized = false;
+    mqtt::CommandCallback commandCallback = nullptr;
 
     String baseTopic() {
         return String(MQTT_TOPIC_PREFIX) + "/" + MQTT_DEVICE_ID;
@@ -62,6 +67,7 @@ namespace {
         if (client.connected()) return true;
 
         stability::mark("mqtt:connect");
+        wdt::feed();
         String clientId = String("irrigation-") + MQTT_DEVICE_ID;
         String willTopic = topic("availability");
         bool ok = client.connect(
@@ -75,12 +81,29 @@ namespace {
         );
         if (ok) {
             client.publish(willTopic.c_str(), "online", true);
+            String commandTopic = topic("commands/+");
+            client.subscribe(commandTopic.c_str());
             stability::mark("mqtt:online");
         } else {
             stability::mark("mqtt:fail");
         }
         wdt::feed();
         return ok;
+    }
+
+    void onMessage(char* rawTopic, byte* payload, unsigned int length) {
+        String topicText(rawTopic ? rawTopic : "");
+        String prefix = topic("commands/");
+        if (!topicText.startsWith(prefix)) return;
+        String commandId = topicText.substring(prefix.length());
+        if (commandId.length() == 0 || commandId.indexOf('/') >= 0) return;
+
+        String body;
+        body.reserve(length);
+        for (unsigned int i = 0; i < length; i++) {
+            body += (char)payload[i];
+        }
+        if (commandCallback) commandCallback(commandId.c_str(), body);
     }
 }
 
@@ -92,8 +115,14 @@ void mqtt::init() {
     if (!enabled()) return;
     client.setServer(MQTT_HOST, MQTT_PORT);
     client.setBufferSize(4096);
+    client.setSocketTimeout(MQTT_SOCKET_TIMEOUT_SEC);
+    client.setCallback(onMessage);
     initialized = true;
     lastReconnectMs = 0;
+}
+
+void mqtt::setCommandCallback(CommandCallback callback) {
+    commandCallback = callback;
 }
 
 void mqtt::loop() {

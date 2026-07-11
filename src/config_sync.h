@@ -51,6 +51,7 @@ namespace cfg {
     void loadFromNVS();
     bool sync();            // GET /config – true wenn neue Daten
     void ackCommands();     // POST /config/ack für alle pending commands
+    void handleMqttCommand(const char* id, const String& payload);
     bool backendOk();       // letzter erfolgreicher Backend-Kontakt frisch?
     unsigned long lastBackendOkMs();
 }
