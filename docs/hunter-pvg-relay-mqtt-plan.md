@@ -313,11 +313,125 @@ nicht mehr im zeitkritischen Loop blockieren.
 
 ### Broker
 
-Empfehlung:
+Ist-Stand Infrastruktur:
 
-- Mosquitto im bestehenden Docker-Setup neben Backend/Frontend.
-- Auth per User/Pass oder internem Token.
-- TLS optional spaeter; im Heimnetz zuerst robuste Funktion herstellen.
+- Bestehender Mosquitto laeuft in einem anderen Docker-Projekt.
+- Extern erreichbar ueber `tofu.creano.de:1883`.
+- Traefik leitet TCP ueber den EntryPoint `mqtt` an den Service `mqtt:1883`
+  weiter (`HostSNI(*)`, kein TLS auf MQTT-Ebene).
+- Der Mosquitto-Service erzeugt Passwortdatei und ACL beim Containerstart aus
+  `.env`-Variablen.
+- Aktuelles Projekt nutzt bereits User/Pass/ACL fuer `catfeeder/#`.
+
+MQTT wird fuer Bewaesserung erst umgesetzt, wenn Infrastruktur, Credentials,
+ACL und externe Verbindung sauber getestet sind. Bis dahin keine Aenderungen an
+Web-App oder ESP.
+
+Empfehlung fuer dieselbe Mosquitto-Instanz:
+
+- Bestehenden Broker weiterverwenden, aber Bewaesserung strikt ueber eigenes
+  Topic-Prefix und eigene MQTT-User trennen.
+- Kein Mischbetrieb unter `catfeeder/#`.
+- TLS spaeter nur wenn wirklich benoetigt; zuerst stabile TCP/Auth/ACL testen.
+- HTTP bleibt bis nach mehrtaegigem stabilen MQTT-Betrieb aktiv.
+
+Vorgeschlagene `.env`-Erweiterung im bestehenden Mosquitto-Projekt:
+
+```env
+MQTT_IRRIGATION_DEVICE_USER=irrigation_esp
+MQTT_IRRIGATION_DEVICE_PASS=<strong-password>
+MQTT_IRRIGATION_BACKEND_USER=irrigation_backend
+MQTT_IRRIGATION_BACKEND_PASS=<strong-password>
+MQTT_IRRIGATION_DEVICE_ID=esp32-01
+MQTT_IRRIGATION_TOPIC_PREFIX=irrigation
+MQTT_PUBLIC_HOST=tofu.creano.de
+MQTT_PUBLIC_PORT=1883
+```
+
+Vorgeschlagene ACL-Erweiterung:
+
+```text
+user irrigation_esp
+topic readwrite irrigation/esp32-01/status
+topic readwrite irrigation/esp32-01/availability
+topic readwrite irrigation/esp32-01/events
+topic readwrite irrigation/esp32-01/sensors
+topic read irrigation/esp32-01/config
+topic read irrigation/esp32-01/commands
+topic write irrigation/esp32-01/commands/+/result
+
+user irrigation_backend
+topic readwrite irrigation/esp32-01/#
+```
+
+Hinweis: Der bestehende `docker-compose.yaml` baut ACL aktuell per `printf`
+direkt im `command`-Block. Fuer Bewaesserung entweder diesen Block um die
+beiden neuen User erweitern oder langfristig auf eine generierte ACL-Datei
+auslagern, damit Catfeeder und Bewaesserung nicht in einer unlesbaren
+Einzeile vermischt werden.
+
+Vorbereitungs-Todos Infrastruktur:
+
+- [ ] `.env` im bestehenden Mosquitto-Projekt um Bewaesserungs-User/Pass und
+  Device-ID erweitern.
+- [ ] Mosquitto-Startscript/Compose-Command um die neuen User und ACL-Regeln
+  erweitern.
+- [ ] Sicherstellen, dass Traefik den EntryPoint `mqtt` auf Port `1883`
+  wirklich nach extern veroeffentlicht.
+- [ ] Container neu starten und pruefen, dass `mosquitto_passwords` und
+  `mosquitto_acl` die neuen User enthalten.
+- [ ] Von lokal extern gegen `tofu.creano.de:1883` mit den neuen Credentials
+  testen.
+- [ ] Testprotokoll in dieser Doku ergaenzen, bevor Web-App/ESP-Code angepasst
+  wird.
+
+Manuelle Infrastrukturtests:
+
+```bash
+mosquitto_sub -h tofu.creano.de -p 1883 \
+  -u "$MQTT_IRRIGATION_BACKEND_USER" -P "$MQTT_IRRIGATION_BACKEND_PASS" \
+  -t 'irrigation/esp32-01/#' -v
+
+mosquitto_pub -h tofu.creano.de -p 1883 \
+  -u "$MQTT_IRRIGATION_DEVICE_USER" -P "$MQTT_IRRIGATION_DEVICE_PASS" \
+  -t 'irrigation/esp32-01/status' \
+  -m '{"test":true,"source":"manual"}'
+
+mosquitto_pub -h tofu.creano.de -p 1883 \
+  -u "$MQTT_IRRIGATION_BACKEND_USER" -P "$MQTT_IRRIGATION_BACKEND_PASS" \
+  -t 'irrigation/esp32-01/config' -r \
+  -m '{"test":true,"retained":true}'
+
+mosquitto_sub -h tofu.creano.de -p 1883 \
+  -u "$MQTT_IRRIGATION_DEVICE_USER" -P "$MQTT_IRRIGATION_DEVICE_PASS" \
+  -t 'irrigation/esp32-01/config' -C 1 -v
+```
+
+Negative ACL-Tests:
+
+```bash
+# Device darf nicht in Catfeeder schreiben.
+mosquitto_pub -h tofu.creano.de -p 1883 \
+  -u "$MQTT_IRRIGATION_DEVICE_USER" -P "$MQTT_IRRIGATION_DEVICE_PASS" \
+  -t 'catfeeder/test/status' -m 'forbidden'
+
+# Catfeeder-User duerfen nicht in Bewaesserung schreiben.
+mosquitto_pub -h tofu.creano.de -p 1883 \
+  -u "$MQTT_DEVICE_USER" -P "$MQTT_DEVICE_PASS" \
+  -t 'irrigation/esp32-01/status' -m 'forbidden'
+```
+
+Abnahmekriterien vor Code-Aenderungen:
+
+- [ ] Publish/Subscribe mit `irrigation_backend` funktioniert fuer
+  `irrigation/esp32-01/#`.
+- [ ] `irrigation_esp` kann Status/Event/Sensor schreiben.
+- [ ] `irrigation_esp` kann retained Config lesen.
+- [ ] `irrigation_esp` kann Command-Result schreiben.
+- [ ] `irrigation_esp` kann keine fremden Prefixe schreiben.
+- [ ] Catfeeder-User koennen keine Bewaesserungs-Topics schreiben.
+- [ ] Retained Config kann gesetzt, gelesen und geloescht werden.
+- [ ] Broker-Neustart erhaelt retained Config und Auth/ACL.
 
 ### Topics
 
@@ -524,13 +638,35 @@ MQTT. Dadurch muss der ESP keine HTTP-Polls fuer Commands mehr machen.
    - Status: erledigt mit Firmware `2.2.11` und Web-App `1.9.8`.
    - Quick-Test nutzt `run_once` und die Runtime-Queue.
 
-### Phase 4: MQTT parallel einfuehren, spaeter
+### Phase 4: MQTT-Infrastruktur vorbereiten
 
-1. Mosquitto lokal/deploymentseitig bereitstellen.
-2. ESP MQTT-Client einbauen.
-3. Status/Event/Sensor per MQTT publishen.
-4. Backend MQTT-Subscriber schreibt Live-State/Events.
-5. HTTP-Status parallel noch aktiv lassen, bis Live-State stabil ist.
+Status: Planung begonnen am 2026-07-11. Keine Web-App-/ESP-Codeaenderung,
+bis Broker, ACL und manueller Test sauber erledigt sind.
+
+1. Bestehenden Mosquitto unter `tofu.creano.de:1883` fuer Bewaesserung
+   vorbereiten:
+   - eigene User `irrigation_esp` und `irrigation_backend`.
+   - eigenes Prefix `irrigation/esp32-01/#`.
+   - Catfeeder-Topics bleiben strikt getrennt.
+2. `.env` und Mosquitto-Startscript im bestehenden Docker-Projekt erweitern.
+3. Traefik TCP-Route `mqtt` pruefen:
+   - Port 1883 extern erreichbar.
+   - kein TLS/SNI-Zwang fuer den ersten Schritt.
+4. Manuelle Tests mit `mosquitto_pub`/`mosquitto_sub` ausfuehren:
+   - positive Publish/Subscribe-Tests.
+   - negative ACL-Tests.
+   - retained Config setzen/lesen/loeschen.
+5. Erst nach erfolgreichem Test:
+   - ESP MQTT-Client einbauen.
+   - Backend MQTT-Subscriber/Publisher einbauen.
+   - HTTP parallel weiterlaufen lassen.
+
+### Phase 4b: MQTT parallel einfuehren, spaeter
+
+1. ESP MQTT-Client einbauen.
+2. Status/Event/Sensor per MQTT publishen.
+3. Backend MQTT-Subscriber schreibt Live-State/Events.
+4. HTTP-Status parallel noch aktiv lassen, bis Live-State stabil ist.
 
 ### Phase 5: Commands auf MQTT umstellen
 
@@ -548,13 +684,15 @@ MQTT. Dadurch muss der ESP keine HTTP-Polls fuer Commands mehr machen.
 
 ## Offene Entscheidungen
 
-- Relaisboard active-low oder active-high?
-- 6 Zonen initial oder direkt 8 Zonen?
-- Master-Valve/Pumpenrelais benoetigt?
-- MQTT Broker im bestehenden Docker-Stack oder extern?
-- MQTT Auth: User/Pass, Token oder internes Netz?
+- MQTT Credentials final in `.env` festlegen und sicher ablegen.
+- Mosquitto-ACL im bestehenden Compose-Command erweitern oder in eine eigene
+  generierte Datei auslagern.
 - TLS sofort oder erst spaeter?
-- WhatsApp-Benachrichtigungen weiter direkt vom ESP oder kuenftig nur Backend?
+- MQTT retained Config: nur Backend schreibt, ESP liest.
+- MQTT Commands: beim ersten Umbau nur Status/Events/Sensoren oder direkt auch
+  Commands?
+- HTTP-Fallback: wie lange parallel behalten, bevor `/commands` und Status-POST
+  reduziert werden?
 
 ## Empfehlung
 
