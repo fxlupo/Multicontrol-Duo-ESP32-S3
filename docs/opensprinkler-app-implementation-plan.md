@@ -270,6 +270,10 @@ Akzeptanz:
 
 Mehrwert: Dashboard muss Laufzeit/Queue nicht aus Events erraten.
 
+Status: umgesetzt am 2026-07-11. Firmware `2.2.10` meldet Runtime-State und
+Queue-Laenge im Status-POST; Web-App `1.9.7` zeigt `running`, `queued`,
+Restzeit und Queue-Laenge an.
+
 Firmware:
 
 - Runtime-State pro Zone einfuehren:
@@ -369,12 +373,10 @@ Akzeptanz:
 
 ## Empfohlene Reihenfolge ab jetzt
 
-1. ESP/TFT-Sensor-History ausbauen, per OTA flashen und pruefen.
-2. Danach neuen schlanken Folgeplan erstellen.
-3. P4 Program Preview als optionaler Web-App-Mehrwert.
-4. P5 Runtime-State/Queue, bevor echtes Run-Once/Queue-Handling kommt.
-5. P3 Run-Once/Testprogramm nach P5 vollstaendig bauen.
-6. P6 Sperren/Rain Delay und P7 Import/Export nur bei konkretem Bedarf.
+1. P3 Run-Once/Testprogramm bauen, jetzt mit sauberem Runtime-State.
+2. P4 Program Preview als optionaler Web-App-Mehrwert.
+3. P6 Sperren/Rain Delay und P7 Import/Export nur bei konkretem Bedarf.
+4. P8 MQTT bleibt niedrig priorisiert.
 
 ## Nicht jetzt
 

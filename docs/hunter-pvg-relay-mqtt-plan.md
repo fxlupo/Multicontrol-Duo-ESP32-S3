@@ -109,30 +109,24 @@ Der Relais-/6-Zonen-/Ecowitt-Produktivstand ist erreicht:
 - 7-Tage-History in der Web-App funktioniert mit echten Daten.
 - ESP/TFT zeigt keine lokale Sensor-History mehr, sondern nur Live-Werte.
 - Manuelle Event-Dauer ist per OTA gefixt und getestet.
+- ESP meldet Runtime-State/Queue mit `idle`/`running`/`queued`, Restzeit und
+  Queue-Laenge; Web-App Version `1.9.7` zeigt diese Werte an.
 
 Naechste sinnvolle Schritte, falls wir weiter ausbauen:
 
-1. ESP/TFT Live-Sensorseite kurz vor Ort pruefen:
-   - Tab `Sensor` zeigt Live-Werte.
-   - V5/V6 zeigen `Ch 5 geteilt`.
-   - keine 30T-History/Charts mehr auf dem ESP.
-2. Program Preview in der Web-App planen:
+1. Run-Once/Testprogramm bauen:
+   - Dauer pro Zone.
+   - Quick-Test: alle aktiven Zonen je X Sekunden.
+   - Queue-State fuer Anzeige/Stop nutzen.
+2. Program Preview in der Web-App optional planen:
    - naechste 7 Tage aus Schedules + aktuellen Sensorwerten simulieren.
    - anzeigen: Lauf wuerde starten / wuerde wegen Sensor skippen.
    - nur als Plausibilitaetsvorschau, nicht als harte Zusage.
-3. Runtime-State/Queue sauber modellieren:
-   - `idle`/`running`/`queued`, Restzeit, Queue-Laenge.
-   - Restzeit nicht mehr aus Eventlog rekonstruieren.
-   - `close(zone)` entfernt laufende oder wartende Jobs.
-4. Danach Run-Once/Testprogramm:
-   - Dauer pro Zone.
-   - Quick-Test: alle aktiven Zonen je X Sekunden.
-   - erst nach sauberem Runtime-State/Queue produktiv machen.
-5. Globale Sperren/Rain Delay nur bei Bedarf:
+3. Globale Sperren/Rain Delay nur bei Bedarf:
    - System aktiv/deaktiviert.
    - Pause/Rain Delay mit Endzeit.
    - Sensor-Ignore pro Zone nur bewusst und sichtbar.
-6. MQTT bleibt unten:
+4. MQTT bleibt unten:
    - erst wenn HTTP/Polling im Produktivbetrieb wirklich stoert.
    - dann zunaechst Status/Events/Sensoren, spaeter Commands.
 
@@ -492,6 +486,10 @@ MQTT. Dadurch muss der ESP keine HTTP-Polls fuer Commands mehr machen.
 - [x] ESP/TFT: Sensor-History-Chart entfernt; der Sensor-Tab zeigt nur noch
   Live-Werte. Langfristige Auswertung passiert in der App. Per OTA auf
   `192.168.10.116` ausgerollt am 2026-07-11 10:18 CEST.
+- [x] Firmware/Web-App: Runtime-State und Queue sichtbar gemacht
+  (`idle`/`running`/`queued`, `remainingSec`, `queueLength`). Firmware per OTA
+  auf `192.168.10.116` ausgerollt am 2026-07-11 10:30 CEST; Web-App auf
+  Version `1.9.7` vorbereitet.
 - [ ] Web-App: Run-Once/Testprogramm vormerken (Dauer pro Zone, Quick-Test
   fuer alle Zonen).
 - [ ] Web-App: Program Preview vormerken (naechste 7 Tage, geplante Laufzeiten,
@@ -505,12 +503,14 @@ MQTT. Dadurch muss der ESP keine HTTP-Polls fuer Commands mehr machen.
    - `queued`
    - `remainingSec`
    - `queueLength`
+   - Status: erledigt mit Firmware `2.2.10`.
 2. Queue robuster machen:
    - pro Zone merken, ob sie bereits in der Queue ist.
    - `close(zone)` entfernt laufende und wartende Jobs dieser Zone.
    - `close_all` leert Queue und Runtime-State eindeutig.
+   - Status: erledigt mit Firmware `2.2.10`.
 3. Manuelle Queue-Strategie bewusst festlegen:
-   - Default zunaechst `reject_if_busy` oder `replace`.
+   - Default aktuell: `reject_if_busy`.
    - `append`/`front` erst anbieten, wenn Statusanzeige sauber ist.
 4. Betriebsflags vorbereiten:
    - Controller enabled/disabled.

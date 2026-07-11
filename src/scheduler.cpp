@@ -10,6 +10,7 @@ struct WaterJob {
     uint8_t  zone;
     uint32_t durationSec;
     bool     started;
+    unsigned long startedAt;
     char     reason[12];
     char     detail[64];
     float    moisture;
@@ -73,13 +74,43 @@ static uint8_t fallbackPercent() {
     return min<uint8_t>(100, max<uint8_t>(1, SCHEDULER_SENSOR_FALLBACK_PERCENT));
 }
 
+static int8_t jobIndexForZone(uint8_t zone) {
+    for (int8_t i = 0; i < _qLen; i++) {
+        if (_queue[i].zone == zone) return i;
+    }
+    return -1;
+}
+
+static bool removeJobAt(int8_t idx) {
+    if (idx < 0 || idx >= _qLen) return false;
+    bool removedCurrent = idx == _currentJob;
+    for (int8_t i = idx; i < _qLen - 1; i++) {
+        _queue[i] = _queue[i + 1];
+    }
+    _qLen--;
+
+    if (_qLen <= 0) {
+        _qLen = 0;
+        _currentJob = -1;
+        _jobPauseUntil = 0;
+    } else if (removedCurrent) {
+        if (_currentJob >= _qLen) _currentJob = _qLen - 1;
+        _jobPauseUntil = millis() + VALVE_SEQ_PAUSE_MS;
+    } else if (idx < _currentJob) {
+        _currentJob--;
+    }
+    return true;
+}
+
 static WaterJob* enqueueJob(uint8_t zone, uint32_t durationSec) {
     if (_qLen >= MAX_WATER_QUEUE) return nullptr;
+    if (jobIndexForZone(zone) >= 0 || valve::isOpen(zone)) return nullptr;
     WaterJob& job = _queue[_qLen++];
     memset(&job, 0, sizeof(job));
     job.zone        = zone;
     job.durationSec = durationSec;
     job.started     = false;
+    job.startedAt   = 0;
     job.moisture = job.temp = job.ec = job.rain_6h = NAN;
     return &job;
 }
@@ -105,6 +136,48 @@ void scheduler::clearManualRuns() {
     for (uint8_t i = 0; i < cfg::MAX_ZONES; i++) {
         _manualRuns[i].active = false;
     }
+}
+
+void scheduler::clearQueuedZone(uint8_t zone) {
+    removeJobAt(jobIndexForZone(zone));
+}
+
+void scheduler::clearQueue() {
+    _qLen = 0;
+    _currentJob = -1;
+    _jobPauseUntil = 0;
+}
+
+uint8_t scheduler::queueLength() {
+    if (_currentJob < 0) return _qLen > 0 ? (uint8_t)_qLen : 0;
+    return (uint8_t)max<int8_t>(0, _qLen - _currentJob - 1);
+}
+
+scheduler::RuntimeState scheduler::runtimeState(uint8_t zone) {
+    if (zone < 1 || zone > cfg::MAX_ZONES) return RuntimeState::Idle;
+    if (valve::isOpen(zone)) return RuntimeState::Running;
+    if (_manualRuns[zone - 1].active) return RuntimeState::Running;
+    int8_t idx = jobIndexForZone(zone);
+    if (idx >= 0) return RuntimeState::Queued;
+    return RuntimeState::Idle;
+}
+
+uint32_t scheduler::remainingSec(uint8_t zone) {
+    if (zone < 1 || zone > cfg::MAX_ZONES) return 0;
+
+    ManualRun& run = _manualRuns[zone - 1];
+    if (run.active && run.durationMs > 0) {
+        uint32_t elapsedMs = millis() - run.startedAt;
+        if (elapsedMs >= run.durationMs) return 0;
+        return (run.durationMs - elapsedMs + 999UL) / 1000UL;
+    }
+
+    int8_t idx = jobIndexForZone(zone);
+    if (idx < 0) return 0;
+    WaterJob& job = _queue[idx];
+    if (!job.started || job.startedAt == 0) return job.durationSec;
+    uint32_t elapsedSec = (millis() - job.startedAt) / 1000UL;
+    return elapsedSec >= job.durationSec ? 0 : job.durationSec - elapsedSec;
 }
 
 static void checkManualRunCompletions() {
@@ -134,21 +207,25 @@ static void handleManualCommands() {
         if (strcmp(mc.command, "close_all") == 0) {
             valve::closeAll();
             scheduler::clearManualRuns();
+            scheduler::clearQueue();
             events::log(0, "close", "manual", "close_all", 0, NAN, NAN, NAN, NAN);
         } else if (strcmp(mc.command, "open") == 0) {
             uint32_t durMs = (uint32_t)mc.duration_min * 60000UL;
             bool wasOpen = valve::isOpen(mc.zone_id);
-            if (valve::open(mc.zone_id, durMs)) {
+            if (valve::getOpenZone() == 0 && scheduler::queueLength() == 0 && valve::open(mc.zone_id, durMs)) {
                 char det[64];
                 snprintf(det, sizeof(det), "Manuell %u min", mc.duration_min);
                 events::log(mc.zone_id, "open", "manual", det, 0, NAN, NAN, NAN, NAN);
                 if (!wasOpen) scheduler::trackManualOpen(mc.zone_id, durMs);
+            } else {
+                events::log(mc.zone_id, "skip", "manual", "busy", 0, NAN, NAN, NAN, NAN);
             }
         } else if (strcmp(mc.command, "close") == 0) {
             uint32_t durSec = 0;
             if (mc.zone_id >= 1 && mc.zone_id <= cfg::MAX_ZONES && valve::isOpen(mc.zone_id)) {
                 durSec = manualElapsedSec(_manualRuns[mc.zone_id - 1]);
             }
+            scheduler::clearQueuedZone(mc.zone_id);
             valve::close(mc.zone_id);
             scheduler::clearManualRun(mc.zone_id);
             events::log(mc.zone_id, "close", "manual", "close", durSec, NAN, NAN, NAN, NAN);
@@ -299,6 +376,7 @@ void scheduler::update() {
                 events::log(job.zone, "open", job.reason, job.detail,
                     job.durationSec, job.moisture, job.temp, job.ec, job.rain_6h);
                 job.started = true;
+                job.startedAt = millis();
             }
         } else {
             // Job beendet (Max-Timer hat geschlossen oder manuell)

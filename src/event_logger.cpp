@@ -3,6 +3,7 @@
 #include "config.h"
 #include "wifi_manager.h"
 #include "valve_driver.h"
+#include "scheduler.h"
 #include "ecowitt_client.h"
 #include "stability.h"
 #include <ArduinoJson.h>
@@ -48,6 +49,15 @@ static bool postJson(const char* stage, const char* path, const String& body) {
 static void setNullableFloat(JsonObject& o, const char* key, float v) {
     if (isnan(v)) o[key] = nullptr;
     else          o[key] = v;
+}
+
+static const char* runtimeStateText(scheduler::RuntimeState state) {
+    switch (state) {
+        case scheduler::RuntimeState::Running: return "running";
+        case scheduler::RuntimeState::Queued:  return "queued";
+        case scheduler::RuntimeState::Idle:
+        default:                               return "idle";
+    }
 }
 
 static void addRecentEvent(const EventEntry& e) {
@@ -222,8 +232,19 @@ void events::postStatus() {
     doc["lastCrashHeap"]   = stability::lastBreadcrumbHeap();
     doc["ecowittOk"]       = ecowitt::ecowittOk();
     doc["valveStates"]     = valve::stateStr();
-    doc["firmwareVersion"] = "2.2.9";
+    doc["firmwareVersion"] = "2.2.10";
     doc["ipAddress"]       = WiFi.localIP().toString();
+
+    JsonObject runtime = doc["runtime"].to<JsonObject>();
+    runtime["queueLength"] = scheduler::queueLength();
+    JsonArray zones = runtime["zones"].to<JsonArray>();
+    for (uint8_t zone = 1; zone <= RELAY_ZONE_COUNT; zone++) {
+        JsonObject z = zones.add<JsonObject>();
+        z["zone"] = zone;
+        z["state"] = runtimeStateText(scheduler::runtimeState(zone));
+        z["remainingSec"] = scheduler::remainingSec(zone);
+    }
+
     String body;
     serializeJson(doc, body);
     postJson("status", "/status", body);

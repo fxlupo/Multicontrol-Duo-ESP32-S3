@@ -1255,6 +1255,7 @@ static void handleManualTouch(uint16_t tx, uint16_t ty) {
         tft->print(stoppingLabel);
         valve::closeAll();
         scheduler::clearManualRuns();
+        scheduler::clearQueue();
         events::log(0, "close", "manual", "Touch STOP ALL", 0, NAN, NAN, NAN, NAN);
     }
 }
@@ -1386,6 +1387,7 @@ void display::handleTouch() {
         if (tx >= 20 && tx < 220 && ty >= 228 && ty < 262) {
             valve::closeAll();
             scheduler::clearManualRuns();
+            scheduler::clearQueue();
             events::log(0, "close", "manual", "Ausgaenge ALLE AUS", 0, NAN, NAN, NAN, NAN);
             refresh();
             return;
