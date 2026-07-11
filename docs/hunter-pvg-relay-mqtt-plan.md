@@ -826,6 +826,15 @@ Status: in Umsetzung ab Firmware `2.2.19`.
      Events bereits beim Entstehen per MQTT publiziert werden.
    - HTTP-Commands bleiben vorerst als Safety-Net aktiv, bis der manuelle
      Command-Pfad ueber MQTT laenger stabil beobachtet wurde.
+   - Backend `1.9.14` deployed:
+     - Compose liest Bewaesserungs-/MQTT-Settings aus `.env`.
+     - Retained Config auf `irrigation/esp32-01/config` ist vorhanden und
+       enthaelt echte `zones`, `schedules` und `control`.
+   - Firmware `2.2.20` laeuft stabil:
+     - MQTT-Live-Status meldet `firmwareVersion: 2.2.20`,
+       `valveStates: 000000` und leere Queue.
+     - MQTT-Command `close_all` auf `commands/codex-close-all-005` lieferte
+       `acked` und `done`.
 
 ## Offene Entscheidungen
 
