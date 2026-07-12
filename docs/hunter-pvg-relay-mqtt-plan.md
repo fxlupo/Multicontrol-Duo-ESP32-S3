@@ -8,7 +8,7 @@ Stand: 2026-07-12
   - IP: `192.168.10.116`
   - OTA ist moeglich und wurde mehrfach erfolgreich genutzt.
   - Firmware `2.2.26` wurde am 2026-07-12 per OTA geflasht.
-- Web-App/Backend `jninty-de` Version `1.9.19` ist produktiv deployed.
+- Web-App/Backend `jninty-de` Version `1.9.20` ist produktiv deployed.
 - MQTT ist der normale Live-Kommunikationsweg:
   - Broker: `tofu.creano.de:1883`
   - Prefix: `irrigation/esp32-01/#`
@@ -96,6 +96,9 @@ produktiven MQTT-/Relais-Stand:
     nach inkompatiblen Firmware-Aenderungen.
   - Commands werden nach lokaler Ausfuehrung aus der aktiven Queue genommen;
     `done` wird separat retrybar nachgemeldet.
+- Jninty `1.9.20` ist aktueller Git-/Produktivstand:
+  - Tasks-Filter laufen in SQL statt im JavaScript-Speicher.
+  - MQTT-Command-Result-RegExp wird einmal beim Handler-Setup kompiliert.
 
 Lokale Pruefung am 2026-07-12:
 
