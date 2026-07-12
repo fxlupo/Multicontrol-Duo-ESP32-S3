@@ -89,7 +89,6 @@ void valve::init() {
     loadSettings();
 
     for (uint8_t i = 0; i < RELAY_ZONE_COUNT; i++) {
-        digitalWrite(ALL_RELAY_PINS[i], relayInactiveLevel());
         pinMode(ALL_RELAY_PINS[i], OUTPUT);
         digitalWrite(ALL_RELAY_PINS[i], relayInactiveLevel());
         clearState(i);
