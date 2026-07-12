@@ -347,6 +347,7 @@ static bool fetchCommands() {
     }
 
     for (uint8_t i = 0; i < cfg::cmdCount; i++) {
+        wdt::feed(); // jeder HTTP-Call kann bis zu HTTP_TIMEOUT_MS blockieren
         bool ok = postCommandState(cfg::commands[i].id, "ack", true, "received");
         API_DBG_PRINTF("[cfg] ack %s %s\n", cfg::commands[i].id, ok ? "ok" : "fail");
     }
