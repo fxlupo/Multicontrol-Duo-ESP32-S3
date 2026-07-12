@@ -214,7 +214,7 @@ static void handleManualCommands() {
                 events::log(0, "skip", "manual", "run_once busy", 0, NAN, NAN, NAN, NAN);
                 continue;
             }
-            uint16_t durationSec = min<uint16_t>(600, max<uint16_t>(1, mc.duration_min));
+            uint16_t durationSec = min<uint16_t>(7200, max<uint16_t>(60, (uint16_t)mc.duration_min * 60));
             uint8_t queued = 0;
             char det[64];
             snprintf(det, sizeof(det), "Testlauf %u s", durationSec);
