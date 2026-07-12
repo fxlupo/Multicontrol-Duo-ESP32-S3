@@ -2,7 +2,7 @@
 
 ESP32-S3 Firmware fuer die Multicontrol-Duo-Bewaesserungssteuerung.
 
-Aktuelle Firmware-Version: `2.2.9`
+Aktuelle Firmware-Version: `2.2.26`
 
 Die Firmware steuert sechs Bewaesserungszonen ueber ein Relaisboard, zeigt den Zustand auf einem 3.2" SPI-TFT an, synchronisiert Sensorwerte/Events/Kommandos mit dem Jninty-Bewaesserungsmodul und unterstuetzt OTA-Updates.
 

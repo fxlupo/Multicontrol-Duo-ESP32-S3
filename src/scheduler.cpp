@@ -35,6 +35,7 @@ static ManualRun _manualRuns[cfg::MAX_ZONES] = {};
 // Letzter Trigger pro Schedule (Schedule-ID → Minute-des-Tages + Wochentag)
 struct LastTrig { uint16_t id; int minOfDay; int wday; };
 static LastTrig _lastTrig[12] = {};
+static uint8_t _lastTrigNext = 0;
 
 static bool alreadyTriggered(uint16_t id, int minOfDay, int wday) {
     for (uint8_t i = 0; i < 12; i++) {
@@ -45,11 +46,20 @@ static bool alreadyTriggered(uint16_t id, int minOfDay, int wday) {
 }
 static void markTriggered(uint16_t id, int minOfDay, int wday) {
     for (uint8_t i = 0; i < 12; i++) {
-        if (_lastTrig[i].id == id || _lastTrig[i].id == 0) {
+        if (_lastTrig[i].id == id) {
             _lastTrig[i] = {id, minOfDay, wday};
             return;
         }
     }
+    for (uint8_t i = 0; i < 12; i++) {
+        if (_lastTrig[i].id == 0) {
+            _lastTrig[i] = {id, minOfDay, wday};
+            _lastTrigNext = (i + 1) % 12;
+            return;
+        }
+    }
+    _lastTrig[_lastTrigNext] = {id, minOfDay, wday};
+    _lastTrigNext = (_lastTrigNext + 1) % 12;
 }
 
 // Bit0=Mo..Bit6=So; tm_wday: 0=So,1=Mo..6=Sa

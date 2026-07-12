@@ -64,7 +64,7 @@ static void runRelayDiagnostic() {
 
         for (uint8_t zone = 1; zone <= RELAY_ZONE_COUNT; zone++) {
             Serial.printf("Relais IN%u / Zone %u EIN: jetzt COM-NO messen\n", zone, zone);
-            bool ok = valve::open(zone, 0);
+            bool ok = valve::open(zone, RELAY_DIAG_ON_MS + 1000UL);
             Serial.println(ok ? "OK" : "FEHLER");
             delay(RELAY_DIAG_ON_MS);
 
@@ -79,7 +79,7 @@ static void runRelayDiagnostic() {
 static void notifyBootStatus(bool rtcAvailable, bool rtcTimeOk) {
     String online = String("IP ") + WiFi.localIP().toString() +
                     ", Reset: " + stability::resetReasonText() +
-                    ", FW 2.2.20";
+                    ", FW 2.2.26";
     notify::enqueue("ESP online", online);
 
     if (stability::resetWasCrash()) {
@@ -739,6 +739,7 @@ void loop() {
     mqtt::loop();
     stability::mark("loop:ota");
     ota::handle();
+    ota::markRunningAppValidIfStable();
     stability::mark("loop:notify");
     notify::loop();
 

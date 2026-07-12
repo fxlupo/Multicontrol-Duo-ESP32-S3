@@ -22,6 +22,7 @@ struct EventEntry {
     float    ec;
     float    rain_6h;
     char     created_at[20];
+    bool     mqtt_published;
 };
 
 static EventEntry _buf[EVENT_BUF_SIZE];
@@ -93,13 +94,13 @@ static void serializeEvent(JsonObject& o, const EventEntry& e, bool legacyResetE
     o["createdAt"] = e.created_at;
 }
 
-static void publishMqttEvent(const EventEntry& e) {
+static bool publishMqttEvent(const EventEntry& e) {
     JsonDocument doc;
     JsonObject o = doc.to<JsonObject>();
     serializeEvent(o, e, false);
     String body;
     serializeJson(doc, body);
-    mqtt::publishJson("events", body);
+    return mqtt::publishJson("events", body);
 }
 
 static bool buildEventBatch(String& body, uint8_t toSend, bool legacyResetEvents) {
@@ -155,13 +156,14 @@ void events::log(uint8_t zone_id, const char* action, const char* reason,
     e.temp         = temp;
     e.ec           = ec;
     e.rain_6h      = rain_6h;
+    e.mqtt_published = false;
     strlcpy(e.action,    action,  sizeof(e.action));
     strlcpy(e.reason,    reason,  sizeof(e.reason));
     strlcpy(e.detail,    detail,  sizeof(e.detail));
     strlcpy(e.created_at, nowStr().c_str(), sizeof(e.created_at));
 
     addRecentEvent(e);
-    publishMqttEvent(e);
+    e.mqtt_published = publishMqttEvent(e);
 }
 
 uint8_t events::recentCount() {
@@ -208,8 +210,15 @@ void events::flush() {
     if (!wifi::isConnected() || _count == 0) return;
     if (valve::getOpenZone() > 0) return;
     if (mqtt::connected()) {
-        _head = (_head + _count) % EVENT_BUF_SIZE;
-        _count = 0;
+        while (_count > 0) {
+            EventEntry& e = _buf[_head];
+            if (!e.mqtt_published) {
+                e.mqtt_published = publishMqttEvent(e);
+                if (!e.mqtt_published) return;
+            }
+            _head = (_head + 1) % EVENT_BUF_SIZE;
+            _count--;
+        }
         return;
     }
     uint8_t toSend = min(_count, (uint8_t)20);
@@ -248,7 +257,7 @@ void events::postStatus() {
     doc["lastCrashHeap"]   = stability::lastBreadcrumbHeap();
     doc["ecowittOk"]       = ecowitt::ecowittOk();
     doc["valveStates"]     = valve::stateStr();
-    doc["firmwareVersion"] = "2.2.20";
+    doc["firmwareVersion"] = "2.2.26";
     doc["ipAddress"]       = WiFi.localIP().toString();
 
     JsonObject runtime = doc["runtime"].to<JsonObject>();

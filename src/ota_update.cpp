@@ -2,7 +2,9 @@
 #include "config.h"
 #include "wifi_manager.h"
 #include "watchdog.h"
+#include "valve_driver.h"
 #include <ArduinoOTA.h>
+#include <esp_ota_ops.h>
 
 static bool _active = false;
 static bool _running = false;
@@ -10,6 +12,11 @@ static bool _begun = false;
 static uint8_t _progress = 0;
 static uint32_t _untilMs = 0;
 static const char* _status = "bereit";
+static bool _rollbackMarked = false;
+
+#ifndef OTA_MARK_VALID_AFTER_MS
+#define OTA_MARK_VALID_AFTER_MS 120000UL
+#endif
 
 void ota::init() {
     ArduinoOTA.setHostname(OTA_HOSTNAME);
@@ -79,6 +86,21 @@ void ota::handle() {
     ArduinoOTA.handle();
     if (!_running && _untilMs != 0 && (int32_t)(millis() - _untilMs) >= 0) {
         stop();
+    }
+}
+
+void ota::markRunningAppValidIfStable() {
+    if (_rollbackMarked || _active || _running) return;
+    if (millis() < OTA_MARK_VALID_AFTER_MS) return;
+    if (!wifi::isConnected()) return;
+    if (valve::getOpenZone() > 0) return;
+
+    esp_err_t err = esp_ota_mark_app_valid_cancel_rollback();
+    _rollbackMarked = true;
+    if (err == ESP_OK) {
+        _status = "Rollback bestaetigt";
+    } else {
+        _status = "Rollback nicht aktiv";
     }
 }
 

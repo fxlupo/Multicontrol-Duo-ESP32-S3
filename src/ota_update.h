@@ -6,6 +6,7 @@ namespace ota {
     void startWindow(uint32_t windowMs);
     void stop();
     void handle();
+    void markRunningAppValidIfStable();
 
     bool active();
     bool running();

@@ -40,6 +40,10 @@ static unsigned long _backendBackoffUntilMs = 0;
 static uint8_t _backendErrorCount = 0;
 static String _lastConfigPayload;
 static bool _mqttConfigReady = false;
+static ManualCommand _pendingDone[5] = {};
+static uint8_t _pendingDoneCount = 0;
+
+static constexpr uint16_t CFG_NVS_SCHEMA_VERSION = 1;
 
 static void markBackendOk() {
     _lastBackendOkMs = millis();
@@ -64,6 +68,9 @@ static bool backendBackoffActive() {
 static void saveToNVS() {
     Preferences p;
     p.begin(NVS_NAMESPACE, false);
+    p.putUShort("cfg_schema", CFG_NVS_SCHEMA_VERSION);
+    p.putUShort("cfg_zone_sz", sizeof(ZoneConfig));
+    p.putUShort("cfg_sched_sz", sizeof(Schedule));
     p.putUInt("cfg_version", cfg::version);
     p.putBytes("cfg_zones",  cfg::zones,     sizeof(ZoneConfig)    * cfg::zoneCount);
     p.putUChar("cfg_zc",     cfg::zoneCount);
@@ -130,9 +137,59 @@ static bool publishMqttCommandResult(const char* id, const char* status, bool ok
     return mqtt::publishJson((String("commands/") + id + "/result").c_str(), body);
 }
 
+static bool pendingDoneContains(const char* id) {
+    if (!id || !id[0]) return false;
+    for (uint8_t i = 0; i < _pendingDoneCount; i++) {
+        if (strncmp(_pendingDone[i].id, id, sizeof(_pendingDone[i].id)) == 0) return true;
+    }
+    return false;
+}
+
+static void queueDoneCommand(const ManualCommand& cmd) {
+    if (!cmd.id[0] || pendingDoneContains(cmd.id)) return;
+    if (_pendingDoneCount >= 5) return;
+    _pendingDone[_pendingDoneCount++] = cmd;
+}
+
+static void removePendingDoneAt(uint8_t idx) {
+    if (idx >= _pendingDoneCount) return;
+    for (uint8_t i = idx; i < _pendingDoneCount - 1; i++) {
+        _pendingDone[i] = _pendingDone[i + 1];
+    }
+    _pendingDoneCount--;
+}
+
+static void flushPendingDoneCommands() {
+    if (!wifi::isConnected() || _pendingDoneCount == 0) return;
+    uint8_t i = 0;
+    while (i < _pendingDoneCount) {
+        wdt::feed();
+        ManualCommand& cmd = _pendingDone[i];
+        bool delivered = false;
+        if (cmd.source_mqtt) {
+            delivered = publishMqttCommandResult(cmd.id, "done", true, "executed");
+        }
+        if (!cmd.source_mqtt || !delivered) {
+            delivered = postCommandState(cmd.id, "done", true, "executed");
+        }
+        if (delivered) removePendingDoneAt(i);
+        else i++;
+    }
+}
+
 void cfg::loadFromNVS() {
     Preferences p;
     p.begin(NVS_NAMESPACE, true);
+    uint16_t schema = p.getUShort("cfg_schema", 0);
+    uint16_t zoneSize = p.getUShort("cfg_zone_sz", 0);
+    uint16_t schedSize = p.getUShort("cfg_sched_sz", 0);
+    if (schema != CFG_NVS_SCHEMA_VERSION || zoneSize != sizeof(ZoneConfig) || schedSize != sizeof(Schedule)) {
+        version = 0;
+        zoneCount = 0;
+        schedCount = 0;
+        p.end();
+        return;
+    }
     version    = p.getUInt("cfg_version", 0);
     zoneCount  = p.getUChar("cfg_zc", 0);
     schedCount = p.getUChar("cfg_sc", 0);
@@ -360,6 +417,7 @@ bool cfg::sync() {
         API_DBG_PRINTLN("[cfg] skip: no wifi");
         return false;
     }
+    flushPendingDoneCommands();
     bool valveOpen = valve::getOpenZone() > 0;
     if (backendBackoffActive() && !valveOpen) {
         API_DBG_PRINTLN("[cfg] skip: backend backoff");
@@ -396,18 +454,13 @@ bool cfg::sync() {
 }
 
 void cfg::ackCommands() {
-    if (!wifi::isConnected() || cmdCount == 0) return;
+    if (cmdCount == 0) return;
 
     for (uint8_t i = 0; i < cmdCount; i++) {
-        bool mqttDone = false;
-        if (commands[i].source_mqtt) {
-            mqttDone = publishMqttCommandResult(commands[i].id, "done", true, "executed");
-        }
-        if (!commands[i].source_mqtt || !mqttDone) {
-            postCommandState(commands[i].id, "done", true, "executed");
-        }
+        queueDoneCommand(commands[i]);
     }
     cmdCount = 0;
+    flushPendingDoneCommands();
 }
 
 bool cfg::backendOk() {

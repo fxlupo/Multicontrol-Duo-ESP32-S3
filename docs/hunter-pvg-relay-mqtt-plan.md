@@ -1,14 +1,14 @@
 # Hunter PVG / Relay / MQTT Umbauplan
 
-Stand: 2026-07-11
+Stand: 2026-07-12
 
-## Produktivstand 2026-07-11
+## Produktivstand 2026-07-12
 
 - Das Board ist produktiv online:
   - IP: `192.168.10.116`
   - OTA ist moeglich und wurde mehrfach erfolgreich genutzt.
-  - Firmware `2.2.20` laeuft produktiv.
-- Web-App/Backend `jninty-de` Version `1.9.14` ist produktiv deployed.
+  - Firmware `2.2.26` wurde am 2026-07-12 per OTA geflasht.
+- Web-App/Backend `jninty-de` Version `1.9.19` ist produktiv deployed.
 - MQTT ist der normale Live-Kommunikationsweg:
   - Broker: `tofu.creano.de:1883`
   - Prefix: `irrigation/esp32-01/#`
@@ -66,6 +66,55 @@ Stand: 2026-07-11
   - Scheduler-Laeufe werden sauber an den ESP uebertragen und ausgefuehrt.
   - MQTT-Umstellung ist im praktischen Betrieb die bessere Entscheidung.
 
+## Wartungsfixes 2.2.21 bis 2.2.25
+
+Die Versionen `2.2.21` bis `2.2.25` sind gezielte Haertungen auf dem
+produktiven MQTT-/Relais-Stand:
+
+- `2.2.21`: `wdt::feed()` im HTTP-Command-Ack-Loop. Mehrere offene Commands
+  koennen jeweils bis zu `HTTP_TIMEOUT_MS` blockieren; der Watchdog wird nun
+  vor jedem Ack-HTTP-Call gefuettert.
+- `2.2.22`: GPIO-Initialisierung im Relais-Treiber korrigiert. Erst
+  `pinMode(OUTPUT)`, danach `digitalWrite(inactiveLevel)`, damit Relais beim
+  Boot nicht kurz undefiniert sind.
+- `2.2.23`: `valve::open()` lehnt `maxDurationMs == 0` ab. Dadurch kann ein
+  Command oder Bug kein Ventil ohne Auto-Close-Timer offen lassen.
+- `2.2.24`: `run_once` interpretiert `duration_min` wieder als Minuten statt
+  Sekunden. Dauer wird auf 60 bis 7200 Sekunden begrenzt.
+- `2.2.25`: OTA-Passwort steht nicht mehr in `platformio.ini`, sondern wird
+  beim OTA-Upload ueber `OTA_PASSWORD` aus der Umgebung gelesen. Das Passwort
+  muss zum lokalen, nicht versionierten `include/config.h` passen.
+- `2.2.26`: M3/H4/M1/M2/M4 umgesetzt:
+  - Event-Puffer wird bei MQTT-Verbindung nur geleert, wenn der MQTT-Publish
+    tatsaechlich erfolgreich war.
+  - OTA-App wird ohne Stresstest erst nach stabiler Laufzeit, WiFi und ohne
+    offenes Ventil per `esp_ota_mark_app_valid_cancel_rollback()` gueltig
+    markiert.
+  - Schedule-Trigger-Speicher verdrängt bei vollen Slots per Ring statt neue
+    Trigger still zu verwerfen.
+  - NVS-Konfig speichert Schema- und Struct-Groessen und ignoriert alte Blobs
+    nach inkompatiblen Firmware-Aenderungen.
+  - Commands werden nach lokaler Ausfuehrung aus der aktiven Queue genommen;
+    `done` wird separat retrybar nachgemeldet.
+
+Lokale Pruefung am 2026-07-12:
+
+- Build `esp32s3` erfolgreich.
+- Build `esp32s3_relay_diag` erfolgreich.
+- OTA per mDNS `bewaesserung-esp32.local` schlug lokal fehl, direkter Upload
+  an `192.168.10.116` war erfolgreich.
+- Nach OTA antwortet `192.168.10.116` per Ping.
+- `firmwareVersion` im MQTT-/HTTP-Status und die Boot-Benachrichtigung melden
+  `2.2.26`.
+- OTA-Upload `2.2.26` an `192.168.10.116` lieferte `Result: OK`; direkter
+  Ping danach: 3/3 Pakete, 0% Verlust.
+- Nach 130 Sekunden Stabilitaetsfrist erneut gepingt: 3/3 Pakete, 0%
+  Verlust.
+- Die Relais-Diagnose nutzt nach dem `maxDurationMs == 0`-Failsafe wieder eine
+  begrenzte Testdauer statt `0`, damit `esp32s3_relay_diag` weiter schaltet.
+- Produktivpfade fuer manuelle `open`-Commands und Scheduler-Jobs uebergeben
+  weiterhin eine endliche Dauer.
+
 ## Abschlussstand
 
 Erledigt:
@@ -95,7 +144,7 @@ Erledigt:
    - Docker Compose liest Bewaesserungs-/MQTT-Werte aus `.env`.
 5. Tests:
    - Retained Config enthaelt echte `zones`, `schedules`, `control`.
-   - MQTT-Status meldet Firmware `2.2.20`, `valveStates: 000000`,
+   - MQTT-Status meldet Firmware `2.2.26`, `valveStates: 000000`,
      Queue leer.
    - MQTT-Command `close_all` lieferte `acked` und `done`.
    - Manuelle Web-App- und Scheduler-Tests erfolgreich.
