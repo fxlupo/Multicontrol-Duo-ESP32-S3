@@ -107,6 +107,7 @@ void valve::closeAll() {
 }
 
 bool valve::open(uint8_t zone, uint32_t maxDurationMs) {
+    if (maxDurationMs == 0) return false; // kein unbegrenztes Offenbleiben
     if (zone < 1 || zone > RELAY_ZONE_COUNT || _busy) return false;
     uint8_t idx = zone - 1;
     if (_state[idx].open) return true;
